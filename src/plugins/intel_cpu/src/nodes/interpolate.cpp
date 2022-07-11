@@ -272,6 +272,82 @@ private:
             {}, {load_pool_gpr_idxs});
     }
 
+    using reg64_t = const Xbyak::Reg64;
+
+    inline void custom_uni_vgatherdps(const Vmm &vmm_arg, reg64_t &mem_base, const Vmm &mem_offset, Vmm &vmm_mask) {
+        // if (jcp_.src_prc.size() < 4) {
+            emulate_gather(vmm_arg, mem_base);
+            return;
+        // }
+        // switch (isa) {
+        //     case x64::avx2:
+        //         uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+        //         vgatherdps(vmm_arg, ptr[mem_base + mem_offset], vmm_mask);
+        //         break;
+        //     case x64::avx512_core:
+        //         kxnord(k_mask, k_mask, k_mask);
+        //         vgatherdps(vmm_arg | k_mask, ptr[mem_base + mem_offset]);
+        //         break;
+        //     case x64::sse41:
+        //         emulate_gather(vmm_arg, mem_base);
+        //         break;
+        //     default: IE_THROW() << "Got unsupported instruction set.";
+        // }
+    }
+
+    inline void emulate_gather(const Xbyak::Xmm &xmm_arg, reg64_t &mem_base, int xmm_offset = 0) {
+        const int xmm_size = 16; // bytes
+        // const int xmm_block_size = xmm_size / jpp.dtype_size;
+        const size_t src_prc_size = jcp_.src_prc.size();
+        const int xmm_block_size = xmm_size / src_prc_size;
+        // const int offset = xmm_offset * jpp.SW * jpp.dtype_size * xmm_block_size;
+        const int offset = xmm_offset * 1 * src_prc_size * xmm_block_size;
+        // uni_vpxor(xmm_arg, xmm_arg, xmm_arg);
+        for (int i = 0; i < xmm_block_size; i++) {
+        // for (int i = 0; i < xmm_size / jcp_.dst_prc.size(); i++) {
+            // Xbyak::Address addr = ptr[mem_base + i * jpp.SW * jpp.dtype_size + offset];
+            Xbyak::Address addr = ptr[mem_base + i * 1 * src_prc_size + offset];
+            // switch (jpp.dtype_size) {
+            switch (src_prc_size) {
+                case 4: uni_vpinsrd(xmm_arg, xmm_arg, addr, i); break;
+                case 2: uni_vpinsrw(xmm_arg, xmm_arg, addr, i); break;
+                case 1:
+                    // mov(al, addr);
+                    // cbw();
+                    // cwde();
+                    uni_vpinsrb(xmm_arg, xmm_arg, addr, i); break;
+                    // uni_vpinsrd(xmm_arg, xmm_arg, eax, i);
+                    break;
+                // default: IE_THROW() << "The data type of size '" << jpp.dtype_size << "' is not supported.";
+                default: IE_THROW() << "The data type of size '" << src_prc_size << "' is not supported.";
+            }
+        }
+        switch (src_prc_size) {
+            case 1:
+                uni_vpmovsxbd(xmm_arg, xmm_arg);
+                uni_vcvtdq2ps(xmm_arg, xmm_arg);
+                break;
+        }
+    }
+
+    Xbyak::Xmm xmm_aux = Xbyak::Xmm(15);
+
+    inline void emulate_gather(const Xbyak::Ymm &ymm_arg, reg64_t &mem_base) {
+        Xbyak::Xmm low_xmm = Xbyak::Xmm(ymm_arg.getIdx());
+        emulate_gather(low_xmm, mem_base, 0);
+        emulate_gather(xmm_aux, mem_base, 1);
+        vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
+    }
+
+    inline void emulate_gather(const Xbyak::Zmm &zmm_arg, reg64_t &mem_base) {
+        Xbyak::Xmm low_xmm = Xbyak::Xmm(zmm_arg.getIdx());
+        emulate_gather(low_xmm, mem_base, 0);
+        for (int i = 1; i < 4; i++) {
+            emulate_gather(xmm_aux, mem_base, i);
+            vinserti64x2(zmm_arg, zmm_arg, xmm_aux, i);
+        }
+    }
+
     void nn_planar() {
         Xbyak::Reg64 reg_index_h = reg_src_aux1;
         Xbyak::Reg64 reg_index_w = reg_src_aux2;
@@ -286,6 +362,9 @@ private:
 
         Xbyak::Reg64 reg_work_amount_oh = rdi;
         mov(reg_work_amount_oh, jcp_.OH);
+
+        // sub(rsp, vlen);
+
         L(out_loop_label);
         {
             // outloop status
@@ -317,10 +396,18 @@ private:
 
                 uni_vmovdqu(vmm_index, ptr[reg_index]);
                 uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-                vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
+                // vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
+                custom_uni_vgatherdps(vmm_val, reg_src_h, vmm_index, vmm_mask);
+                // gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false);
+                // uni_vmovdqu(vmm_val, ptr[reg_src_h + vmm_index]);
+                // mov(reg_src_aux, ptr[reg_src_h + reg_index]);
+                // load(reg_src_aux, vmm_val, step);
                 if (attr_.post_ops_.len() != 0)
                     apply_post_ops(jcp_.dst_prc, 1);
                 store(vmm_val, reg_dst, step);
+
+                // mov(reg_src_aux, ptr[rbp + vlen]);
+                // store(vmm_val, reg_src_aux, step);
 
                 add(reg_dst, step * jcp_.dst_data_size);
                 add(reg_index, step * jcp_.indices_size);
@@ -1268,22 +1355,22 @@ private:
     inline void gather_i32_indices(Vmm vmm_src, const Xbyak::Reg64 &base, int offset, Vmm vmm_indices, int scale,
                                 Precision src_prc, bool is_scalar) {
         Xbyak::Address table_idx = ptr[base + offset + vmm_indices * scale];
-        if ((isa == cpu::x64::avx512_core) && !is_scalar) {
-            // [0-15] bit of int to mask
-            kmovw(k_mask, cubic_planar_table_val(3));
-            if (src_prc == Precision::FP32) {
-                vgatherdps(vmm_src | k_mask, table_idx);  // dword index, packed single data
-            } else if (src_prc == Precision::I32) {
-                vpgatherdd(vmm_src | k_mask, table_idx);  // dword index, dword data
-            }
-        } else if ((isa == cpu::x64::avx2) && !is_scalar) {
-            uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-            if (src_prc == Precision::FP32) {
-                vgatherdps(vmm_src, table_idx, vmm_mask);
-            } else if (src_prc == Precision::I32) {
-                vpgatherdd(vmm_src, table_idx, vmm_mask);
-            }
-        } else {
+        // if ((isa == cpu::x64::avx512_core) && !is_scalar) {
+        //     // [0-15] bit of int to mask
+        //     kmovw(k_mask, cubic_planar_table_val(3));
+        //     if (src_prc == Precision::FP32) {
+        //         vgatherdps(vmm_src | k_mask, table_idx);  // dword index, packed single data
+        //     } else if (src_prc == Precision::I32) {
+        //         vpgatherdd(vmm_src | k_mask, table_idx);  // dword index, dword data
+        //     }
+        // } else if ((isa == cpu::x64::avx2) && !is_scalar) {
+        //     uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+        //     if (src_prc == Precision::FP32) {
+        //         vgatherdps(vmm_src, table_idx, vmm_mask);
+        //     } else if (src_prc == Precision::I32) {
+        //         vpgatherdd(vmm_src, table_idx, vmm_mask);
+        //     }
+        // } else {
             const int gpr_size = 8;
             sub(rsp, gpr_size);
             // move content in register to content in address(ptr[])
@@ -1306,7 +1393,7 @@ private:
             // restore GPR state
             mov(reg_tmp_64, ptr[rsp]);
             add(rsp, gpr_size);
-        }
+        // }
     }
 
     // is_broadcast for broadcasting param for depth_wise and quantize(channel-sensitive post-ops), for fusion with plain layout.
@@ -1765,7 +1852,8 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
         }
 
         // planar for 1.ref on machine without sse41(if no sse41, canFuse() is false). 2.JIT kernel for f32 && avx2(gather).(with fuse)
-        if (mayiuse(cpu::x64::avx2) && inputPrecision == Precision::FP32) {
+        // if (mayiuse(cpu::x64::avx2) && inputPrecision == Precision::FP32) {
+        if (mayiuse(cpu::x64::avx2)) {
             pushDesc(LayoutType::ncsp, jit_avx2);
         }
     }
@@ -1870,7 +1958,8 @@ void Interpolate::prepareParams() {
         if ((key.nodeAttrs.mode == InterpolateMode::nearest || key.nodeAttrs.mode == InterpolateMode::linear_onnx ||
             key.nodeAttrs.mode == InterpolateMode::cubic) &&
             ((key.nodeAttrs.layout != InterpolateLayoutType::planar && mayiuse(cpu::x64::sse41)) ||
-                (mayiuse(cpu::x64::avx2) && key.nodeAttrs.inPrc == Precision::FP32))) {
+                // (mayiuse(cpu::x64::avx2) && key.nodeAttrs.inPrc == Precision::FP32))) {
+                mayiuse(cpu::x64::avx2))) {
             executor = std::make_shared<InterpolateJitExecutor>(key.nodeAttrs,
                                                                key.srcDims,
                                                                key.dstDims,
@@ -3118,7 +3207,8 @@ Interpolate::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAtt
         } else if (mayiuse(cpu::x64::sse41)) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::sse41>(jcp, *attr.get()));
         }
-    } else if (mayiuse(cpu::x64::avx2) && interpAttrs.inPrc == InferenceEngine::Precision::FP32) {
+    // } else if (mayiuse(cpu::x64::avx2) && interpAttrs.inPrc == InferenceEngine::Precision::FP32) {
+    } else if (mayiuse(cpu::x64::avx2)) {
         // gather ISA(for planar JIT kernel) for avx2 and fp32
         interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::avx2>(jcp, *attr.get()));
     } else {
