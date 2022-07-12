@@ -103,7 +103,11 @@ struct jit_uni_interpolate_kernel_f32 : public jit_uni_interpolate_kernel, publi
 
                 switch (jcp_.layout) {
                     case InterpolateLayoutType::planar: {
-                        nn_planar();
+                        // if (jcp_.src_prc == InferenceEngine::Precision::I8) {
+                        //     nn_planar_byte();
+                        // } else {
+                            nn_planar();
+                        // }
                         break;
                     }
                     case InterpolateLayoutType::block: {
@@ -274,8 +278,10 @@ private:
 
     using reg64_t = const Xbyak::Reg64;
 
+    std::array<Vmm, 4>{ Vmm(10), Vmm(11), Vmm(12), Vmm(13) };
+
     inline void custom_uni_vgatherdps(const Vmm &vmm_arg, reg64_t &mem_base, const Vmm &mem_offset, Vmm &vmm_mask) {
-        if (jcp_.src_prc.size() < 4) {
+        if (jcp_.src_prc != InferenceEngine::Precision::FP32) {
             emulate_gather(vmm_arg, mem_base, mem_offset);
             return;
         }
@@ -295,13 +301,62 @@ private:
         }
     }
 
+    // inline void emulate_gather(const Xbyak::Xmm &xmm_arg, reg64_t &mem_base, const Xmm &mem_offset, int xmm_offset = 0) {
+    //     const int xmm_size = 16; // bytes
+    //     // const int xmm_block_size = xmm_size / jpp.dtype_size;
+    //     const size_t src_prc_size = jcp_.src_prc.size();
+    //     // const int xmm_block_size = xmm_size / src_prc_size;
+    //     constexpr int float_int_size = 4;
+    //     const int xmm_block_size = xmm_size / float_int_size;
+    //     // const int offset = xmm_offset * jpp.SW * jpp.dtype_size * xmm_block_size;
+    //     // const int offset = xmm_offset * src_prc_size * xmm_block_size;
+    //     // const int offset = xmm_offset * xmm_size;
+    //     // uni_vpxor(xmm_arg, xmm_arg, xmm_arg);
+    //     for (int i = 0; i < xmm_block_size; i++) {
+    //     // for (int i = 0; i < xmm_size / jcp_.dst_prc.size(); i++) {
+    //         // Xbyak::Address addr = ptr[mem_base + i * jpp.SW * jpp.dtype_size + offset];
+    //         // xor_(reg_table, reg_table);
+    //         // uni_vpextrd(Xbyak::Reg32(reg_table.getIdx()), mem_offset, i);
+    //         // uni_vpextrd(edx, mem_offset, i);
+    //         // uni_vpextrd(reg_table, mem_offset, i);
+    //         Xbyak::Reg32 low_reg_table = Xbyak::Reg32(reg_table.getIdx());
+    //         uni_vpextrd(low_reg_table, mem_offset, i);
+    //         // imul(reg_table, reg_table, src_prc_size);
+    //         add(reg_table, mem_base);
+    //         // Xbyak::Address addr = ptr[mem_base + i * 1 * src_prc_size + offset];
+    //         // Xbyak::Address addr = ptr[reg_table + i * src_prc_size + offset];
+    //         Xbyak::Address addr = ptr[reg_table];
+    //         // switch (jpp.dtype_size) {
+    //         switch (src_prc_size) {
+    //             // case 4: uni_vpinsrd(xmm_arg, xmm_arg, addr, i); break;
+    //             case 4: vinsertps(xmm_arg, xmm_arg, addr, i << 4); break;
+    //             case 2: uni_vpinsrw(xmm_arg, xmm_arg, addr, i); break;
+    //             case 1:
+    //                 // mov(al, addr);
+    //                 // cbw();
+    //                 // cwde();
+    //                 uni_vpinsrb(xmm_arg, xmm_arg, addr, i); break;
+    //                 // uni_vpinsrd(xmm_arg, xmm_arg, eax, i);
+    //                 break;
+    //             // default: IE_THROW() << "The data type of size '" << jpp.dtype_size << "' is not supported.";
+    //             default: IE_THROW() << "The data type of size '" << src_prc_size << "' is not supported.";
+    //         }
+    //     }
+    //     switch (src_prc_size) {
+    //         case 1:
+    //             uni_vpmovsxbd(xmm_arg, xmm_arg);
+    //             uni_vcvtdq2ps(xmm_arg, xmm_arg);
+    //             break;
+    //     }
+    // }
+
     inline void emulate_gather(const Xbyak::Xmm &xmm_arg, reg64_t &mem_base, const Xmm &mem_offset, int xmm_offset = 0) {
         const int xmm_size = 16; // bytes
         // const int xmm_block_size = xmm_size / jpp.dtype_size;
         const size_t src_prc_size = jcp_.src_prc.size();
-        // const int xmm_block_size = xmm_size / src_prc_size;
-        constexpr int float_int_size = 4;
-        const int xmm_block_size = xmm_size / float_int_size;
+        const int xmm_block_size = xmm_size / src_prc_size;
+        // constexpr int float_int_size = 4;
+        // const int xmm_block_size = xmm_size / float_int_size;
         // const int offset = xmm_offset * jpp.SW * jpp.dtype_size * xmm_block_size;
         // const int offset = xmm_offset * src_prc_size * xmm_block_size;
         // const int offset = xmm_offset * xmm_size;
@@ -314,7 +369,7 @@ private:
             // uni_vpextrd(edx, mem_offset, i);
             // uni_vpextrd(reg_table, mem_offset, i);
             Xbyak::Reg32 low_reg_table = Xbyak::Reg32(reg_table.getIdx());
-            uni_vpextrd(low_reg_table, mem_offset, i);
+            uni_vpextrd(low_reg_table, mem_offset, i * src_prc_size / sizeof(int32_t));
             // imul(reg_table, reg_table, src_prc_size);
             add(reg_table, mem_base);
             // Xbyak::Address addr = ptr[mem_base + i * 1 * src_prc_size + offset];
@@ -336,12 +391,12 @@ private:
                 default: IE_THROW() << "The data type of size '" << src_prc_size << "' is not supported.";
             }
         }
-        switch (src_prc_size) {
-            case 1:
-                uni_vpmovsxbd(xmm_arg, xmm_arg);
-                uni_vcvtdq2ps(xmm_arg, xmm_arg);
-                break;
-        }
+        // switch (src_prc_size) {
+        //     case 1:
+        //         uni_vpmovsxbd(xmm_arg, xmm_arg);
+        //         uni_vcvtdq2ps(xmm_arg, xmm_arg);
+        //         break;
+        // }
     }
 
     Xbyak::Xmm xmm_aux = Xbyak::Xmm(15);
@@ -401,6 +456,107 @@ private:
             // reset index_w, index_w * dataSize done when built to avoid redundent compute
             mov(reg_index, reg_index_w);
             int step = vlen / sizeof(float);
+
+            Xbyak::Label nn_loop_label;
+            Xbyak::Label nn_loop_end_label;
+            Xbyak::Label nn_tail_loop_label;
+            Xbyak::Label nn_tail_loop_end_label;
+
+            L(nn_loop_label);   // inner loop
+            {
+                cmp(reg_work_amount, step);
+                jl(nn_loop_end_label, T_NEAR);
+
+                uni_vmovdqu(vmm_index, ptr[reg_index]);
+                uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+                // vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
+                custom_uni_vgatherdps(vmm_val, reg_src_h, vmm_index, vmm_mask);
+                // gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false);
+                // uni_vmovdqu(vmm_val, ptr[reg_src_h + vmm_index]);
+                // mov(reg_src_aux, ptr[reg_src_h + reg_index]);
+                // load(reg_src_aux, vmm_val, step);
+                if (attr_.post_ops_.len() != 0)
+                    apply_post_ops(jcp_.dst_prc, 1);
+                store(vmm_val, reg_dst, step);
+
+                // mov(reg_src_aux, ptr[rbp + vlen]);
+                // store(vmm_val, reg_src_aux, step);
+
+                add(reg_dst, step * jcp_.dst_data_size);
+                add(reg_index, step * jcp_.indices_size);
+                sub(reg_work_amount, step);
+
+                jmp(nn_loop_label, T_NEAR);
+            }
+            L(nn_loop_end_label);
+
+            step = 1;
+            L(nn_tail_loop_label);
+            {
+                cmp(reg_work_amount, 1);
+                jl(nn_tail_loop_end_label, T_NEAR);
+
+                mov(reg_src_aux, reg_src_h);
+                mov(reg_index_offset, dword[reg_index]);
+                add(reg_src_aux, reg_index_offset);
+
+                load(reg_src_aux, vmm_val, step);
+                if (attr_.post_ops_.len() != 0)
+                    apply_post_ops(jcp_.dst_prc, 1);
+                store(vmm_val, reg_dst, step);
+
+                add(reg_dst, step * jcp_.dst_data_size);
+                add(reg_index, step * jcp_.indices_size);
+                sub(reg_work_amount, step);
+
+                jmp(nn_tail_loop_label, T_NEAR);
+            }
+            L(nn_tail_loop_end_label);    // inner loop end
+
+            //increment index_h to next row
+            add(reg_index_h, jcp_.indices_size);
+
+            sub(reg_work_amount_oh, 1);
+            jmp(out_loop_label, T_NEAR);
+        }
+        L(out_loop_end);
+    }
+
+    void nn_planar_byte() {
+        Xbyak::Reg64 reg_index_h = reg_src_aux1;
+        Xbyak::Reg64 reg_index_w = reg_src_aux2;
+        mov(reg_index_h, reg_index);
+        // reg_index represent reg_index_w
+        add(reg_index, jcp_.OH * jcp_.indices_size);
+        // bk for reset to reg_index_w
+        mov(reg_index_w, reg_index);
+
+        Xbyak::Label out_loop_label;
+        Xbyak::Label out_loop_end;
+
+        Xbyak::Reg64 reg_work_amount_oh = rdi;
+        mov(reg_work_amount_oh, jcp_.OH);
+
+        // sub(rsp, vlen);
+
+        L(out_loop_label);
+        {
+            // outloop status
+            cmp(reg_work_amount_oh, 1);
+            jl(out_loop_end, T_NEAR);
+
+            //reset work_amount to OW
+            mov(reg_work_amount, jcp_.OW);
+
+            Xbyak::Reg64 reg_src_h = rsi;
+            mov(reg_src_h, reg_src);
+            // index_h * IW * dataSize done when built to avoid redundent compute
+            mov(reg_index_offset, dword[reg_index_h]);
+            add(reg_src_h, reg_index_offset);  // reg_src_h now point to begin of row
+
+            // reset index_w, index_w * dataSize done when built to avoid redundent compute
+            mov(reg_index, reg_index_w);
+            int step = vlen / sizeof(int);
 
             Xbyak::Label nn_loop_label;
             Xbyak::Label nn_loop_end_label;
