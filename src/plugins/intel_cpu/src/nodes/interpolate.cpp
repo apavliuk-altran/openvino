@@ -275,41 +275,55 @@ private:
     using reg64_t = const Xbyak::Reg64;
 
     inline void custom_uni_vgatherdps(const Vmm &vmm_arg, reg64_t &mem_base, const Vmm &mem_offset, Vmm &vmm_mask) {
-        // if (jcp_.src_prc.size() < 4) {
-            emulate_gather(vmm_arg, mem_base);
+        if (jcp_.src_prc.size() < 4) {
+            emulate_gather(vmm_arg, mem_base, mem_offset);
             return;
-        // }
-        // switch (isa) {
-        //     case x64::avx2:
-        //         uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-        //         vgatherdps(vmm_arg, ptr[mem_base + mem_offset], vmm_mask);
-        //         break;
-        //     case x64::avx512_core:
-        //         kxnord(k_mask, k_mask, k_mask);
-        //         vgatherdps(vmm_arg | k_mask, ptr[mem_base + mem_offset]);
-        //         break;
-        //     case x64::sse41:
-        //         emulate_gather(vmm_arg, mem_base);
-        //         break;
-        //     default: IE_THROW() << "Got unsupported instruction set.";
-        // }
+        }
+        switch (isa) {
+            case x64::avx2:
+                uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+                vgatherdps(vmm_arg, ptr[mem_base + mem_offset], vmm_mask);
+                break;
+            case x64::avx512_core:
+                kxnord(k_mask, k_mask, k_mask);
+                vgatherdps(vmm_arg | k_mask, ptr[mem_base + mem_offset]);
+                break;
+            case x64::sse41:
+                emulate_gather(vmm_arg, mem_base, mem_offset);
+                break;
+            default: IE_THROW() << "Got unsupported instruction set.";
+        }
     }
 
-    inline void emulate_gather(const Xbyak::Xmm &xmm_arg, reg64_t &mem_base, int xmm_offset = 0) {
+    inline void emulate_gather(const Xbyak::Xmm &xmm_arg, reg64_t &mem_base, const Xmm &mem_offset, int xmm_offset = 0) {
         const int xmm_size = 16; // bytes
         // const int xmm_block_size = xmm_size / jpp.dtype_size;
         const size_t src_prc_size = jcp_.src_prc.size();
-        const int xmm_block_size = xmm_size / src_prc_size;
+        // const int xmm_block_size = xmm_size / src_prc_size;
+        constexpr int float_int_size = 4;
+        const int xmm_block_size = xmm_size / float_int_size;
         // const int offset = xmm_offset * jpp.SW * jpp.dtype_size * xmm_block_size;
-        const int offset = xmm_offset * 1 * src_prc_size * xmm_block_size;
+        // const int offset = xmm_offset * src_prc_size * xmm_block_size;
+        // const int offset = xmm_offset * xmm_size;
         // uni_vpxor(xmm_arg, xmm_arg, xmm_arg);
         for (int i = 0; i < xmm_block_size; i++) {
         // for (int i = 0; i < xmm_size / jcp_.dst_prc.size(); i++) {
             // Xbyak::Address addr = ptr[mem_base + i * jpp.SW * jpp.dtype_size + offset];
-            Xbyak::Address addr = ptr[mem_base + i * 1 * src_prc_size + offset];
+            // xor_(reg_table, reg_table);
+            // uni_vpextrd(Xbyak::Reg32(reg_table.getIdx()), mem_offset, i);
+            // uni_vpextrd(edx, mem_offset, i);
+            // uni_vpextrd(reg_table, mem_offset, i);
+            Xbyak::Reg32 low_reg_table = Xbyak::Reg32(reg_table.getIdx());
+            uni_vpextrd(low_reg_table, mem_offset, i);
+            // imul(reg_table, reg_table, src_prc_size);
+            add(reg_table, mem_base);
+            // Xbyak::Address addr = ptr[mem_base + i * 1 * src_prc_size + offset];
+            // Xbyak::Address addr = ptr[reg_table + i * src_prc_size + offset];
+            Xbyak::Address addr = ptr[reg_table];
             // switch (jpp.dtype_size) {
             switch (src_prc_size) {
-                case 4: uni_vpinsrd(xmm_arg, xmm_arg, addr, i); break;
+                // case 4: uni_vpinsrd(xmm_arg, xmm_arg, addr, i); break;
+                case 4: vinsertps(xmm_arg, xmm_arg, addr, i << 4); break;
                 case 2: uni_vpinsrw(xmm_arg, xmm_arg, addr, i); break;
                 case 1:
                     // mov(al, addr);
@@ -331,19 +345,23 @@ private:
     }
 
     Xbyak::Xmm xmm_aux = Xbyak::Xmm(15);
+    Xbyak::Xmm offset_aux = Xbyak::Xmm(14);
 
-    inline void emulate_gather(const Xbyak::Ymm &ymm_arg, reg64_t &mem_base) {
+    inline void emulate_gather(const Xbyak::Ymm &ymm_arg, reg64_t &mem_base, const Ymm &mem_offset) {
         Xbyak::Xmm low_xmm = Xbyak::Xmm(ymm_arg.getIdx());
-        emulate_gather(low_xmm, mem_base, 0);
-        emulate_gather(xmm_aux, mem_base, 1);
+        Xbyak::Xmm low_offset = Xbyak::Xmm(mem_offset.getIdx());
+        emulate_gather(low_xmm, mem_base, low_offset, 0);
+        vextracti128(offset_aux, mem_offset, 1);
+        emulate_gather(xmm_aux, mem_base, offset_aux, 1);
         vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
     }
 
-    inline void emulate_gather(const Xbyak::Zmm &zmm_arg, reg64_t &mem_base) {
+    inline void emulate_gather(const Xbyak::Zmm &zmm_arg, reg64_t &mem_base, const Zmm &mem_offset) {
         Xbyak::Xmm low_xmm = Xbyak::Xmm(zmm_arg.getIdx());
-        emulate_gather(low_xmm, mem_base, 0);
+        emulate_gather(low_xmm, mem_base, mem_offset, 0);
         for (int i = 1; i < 4; i++) {
-            emulate_gather(xmm_aux, mem_base, i);
+            // ----------ADD INDEX EXTRACTION-------------
+            emulate_gather(xmm_aux, mem_base, mem_offset, i);
             vinserti64x2(zmm_arg, zmm_arg, xmm_aux, i);
         }
     }
