@@ -212,10 +212,18 @@ std::vector<ngraph::op::v4::Interpolate::InterpolateMode> interpolateModesBenchm
     ngraph::op::v4::Interpolate::InterpolateMode::CUBIC,
 };
 
+const std::vector<ngraph::op::v4::Interpolate::CoordinateTransformMode> coordinateTransformModesBenchmark = {
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::TF_HALF_PIXEL_FOR_NN,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::PYTORCH_HALF_PIXEL,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::HALF_PIXEL,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::ASYMMETRIC,
+        // ngraph::op::v4::Interpolate::CoordinateTransformMode::ALIGN_CORNERS,
+};
+
 const auto interpolateCasesBenchmark = ::testing::Combine(
         ::testing::ValuesIn(interpolateModesBenchmark),       // InterpolateMode
         ::testing::Values(ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES),   // ShapeCalculationMode
-        ::testing::ValuesIn(coordinateTransformModes),    // CoordinateTransformMode
+        ::testing::ValuesIn(coordinateTransformModesBenchmark),    // CoordinateTransformMode
         ::testing::ValuesIn(nearestModes),    // NearestMode
         ::testing::Values(false),       // AntiAlias
         ::testing::ValuesIn(pads),        // PadBegin
