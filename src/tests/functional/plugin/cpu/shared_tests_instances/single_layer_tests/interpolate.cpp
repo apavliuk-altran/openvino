@@ -207,9 +207,9 @@ TEST_P(InterpolateLayerBenchmarkTest, benchmark) {
 
 std::vector<ngraph::op::v4::Interpolate::InterpolateMode> interpolateModesBenchmark{
     ngraph::op::v4::Interpolate::InterpolateMode::NEAREST,
-    ngraph::op::v4::Interpolate::InterpolateMode::LINEAR,
-    ngraph::op::v4::Interpolate::InterpolateMode::LINEAR_ONNX,
-    ngraph::op::v4::Interpolate::InterpolateMode::CUBIC,
+//     ngraph::op::v4::Interpolate::InterpolateMode::LINEAR,
+//     ngraph::op::v4::Interpolate::InterpolateMode::LINEAR_ONNX,
+//     ngraph::op::v4::Interpolate::InterpolateMode::CUBIC,
 };
 
 const std::vector<ngraph::op::v4::Interpolate::CoordinateTransformMode> coordinateTransformModesBenchmark = {
