@@ -224,7 +224,7 @@ const auto interpolateCasesBenchmark = ::testing::Combine(
         ::testing::ValuesIn(defaultAxes),        // Axes
         ::testing::Values(std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}));      // Scales
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_00, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -269,7 +269,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test, InterpolateLayerBenchmarkTe
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_01, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_01, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -282,7 +282,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_01, InterpolateLayerBenchmar
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_02, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_02, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -295,7 +295,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_02, InterpolateLayerBenchmar
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_03, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_03, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -308,7 +308,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_03, InterpolateLayerBenchmar
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_04, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_04, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -321,7 +321,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_04, InterpolateLayerBenchmar
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_05, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_05, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -334,7 +334,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_05, InterpolateLayerBenchmar
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_06, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_06, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -347,7 +347,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_06, InterpolateLayerBenchmar
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_07, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_07, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -360,7 +360,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_07, InterpolateLayerBenchmar
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_08, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_08, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -373,7 +373,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_08, InterpolateLayerBenchmar
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_09, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_09, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -386,7 +386,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_09, InterpolateLayerBenchmar
         ::testing::Values(additional_config)),                          // Additional network configuration
     InterpolateLayerTest::getTestCaseName);
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_10, InterpolateLayerBenchmarkTest, ::testing::Combine(
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_10, InterpolateLayerTest, ::testing::Combine(
         interpolateCasesBenchmark,
         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
@@ -404,18 +404,18 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_10, InterpolateLayerBenchmar
 
 
 
-INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test, InterpolateLayerTest, ::testing::Combine(
-        interpolateCasesBenchmark,
-        ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
-        ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
-        ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Output precision
-        ::testing::Values(InferenceEngine::Layout::ANY),                  // Input layout
-        ::testing::Values(InferenceEngine::Layout::ANY),                  // Output layout
-        ::testing::Values(std::vector<size_t>{1, 1, 80, 9150}),                            // Input shapes
-        ::testing::Values(std::vector<size_t>{1, 1, 80, 100650}),                          // Target shapes
-        ::testing::Values(CommonTestUtils::DEVICE_CPU),                   // Device name
-        ::testing::Values(additional_config)),                          // Additional network configuration
-    InterpolateLayerTest::getTestCaseName);
+// INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test, InterpolateLayerTest, ::testing::Combine(
+//         interpolateCasesBenchmark,
+//         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
+//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
+//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Output precision
+//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Input layout
+//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Output layout
+//         ::testing::Values(std::vector<size_t>{1, 1, 80, 9150}),                            // Input shapes
+//         ::testing::Values(std::vector<size_t>{1, 1, 80, 100650}),                          // Target shapes
+//         ::testing::Values(CommonTestUtils::DEVICE_CPU),                   // Device name
+//         ::testing::Values(additional_config)),                          // Additional network configuration
+//     InterpolateLayerTest::getTestCaseName);
 
 
 // wavernn-upsampler.xml
