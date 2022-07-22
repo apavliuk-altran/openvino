@@ -8,6 +8,7 @@
 #include "test_utils/fusing_test_utils.hpp"
 #include <common_test_utils/ov_tensor_utils.hpp>
 #include "openvino/core/preprocess/pre_post_process.hpp"
+#include "benchmark.hpp"
 
 using namespace ov::test;
 using namespace CPUTestUtils;
@@ -273,19 +274,19 @@ namespace {
 /* CPU PARAMS */
 std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
     std::vector<CPUSpecificParams> resCPUParams;
-    if (InferenceEngine::with_cpu_x86_avx512f()) {
-        resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
-        resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx512"}, "jit_avx512"});
-    } else if (InferenceEngine::with_cpu_x86_avx2()) {
-        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
-        resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
+    // if (InferenceEngine::with_cpu_x86_avx512f()) {
+    //     resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
+    //     resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx512"}, "jit_avx512"});
+    // } else if (InferenceEngine::with_cpu_x86_avx2()) {
+        // resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
+        // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
         resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
-    } else if (InferenceEngine::with_cpu_x86_sse42()) {
-        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
-        resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
-    } else {
-        resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"ref"}, "ref"});
-    }
+    // } else if (InferenceEngine::with_cpu_x86_sse42()) {
+    //     resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
+    //     resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
+    // } else {
+    //     resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"ref"}, "ref"});
+    // }
     return resCPUParams;
 }
 /* ========== */
@@ -782,5 +783,167 @@ INSTANTIATE_TEST_SUITE_P(smoke_Interpolate_corner_Layout_Test, InterpolateLayerC
     InterpolateLayerCPUTest::getTestCaseName);
 
 } // namespace
+
+////////////////////////Benchmark/////////////////////////////
+namespace benchmark {
+
+struct InterpolateLayerCPUBenchmarkTest : BenchmarkLayerTest<InterpolateLayerCPUTest> {};
+
+TEST_P(InterpolateLayerCPUBenchmarkTest, benchmark) {
+    SKIP_IF_CURRENT_TEST_IS_DISABLED()
+    Run("Interpolate", std::chrono::milliseconds(2000), 100);
+}
+
+std::vector<ngraph::op::v4::Interpolate::InterpolateMode> interpolateModesBenchmark{
+    ngraph::op::v4::Interpolate::InterpolateMode::NEAREST,
+//     ngraph::op::v4::Interpolate::InterpolateMode::LINEAR,
+//     ngraph::op::v4::Interpolate::InterpolateMode::LINEAR_ONNX,
+//     ngraph::op::v4::Interpolate::InterpolateMode::CUBIC,
+};
+
+const std::vector<ngraph::op::v4::Interpolate::CoordinateTransformMode> coordinateTransformModesBenchmark = {
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::TF_HALF_PIXEL_FOR_NN,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::PYTORCH_HALF_PIXEL,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::HALF_PIXEL,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::ASYMMETRIC,
+        // ngraph::op::v4::Interpolate::CoordinateTransformMode::ALIGN_CORNERS,
+};
+
+const std::vector<ngraph::op::v4::Interpolate::NearestMode> nearestModesBenchmark = {
+        ngraph::op::v4::Interpolate::NearestMode::SIMPLE,
+        ngraph::op::v4::Interpolate::NearestMode::ROUND_PREFER_FLOOR,
+        ngraph::op::v4::Interpolate::NearestMode::FLOOR,
+        ngraph::op::v4::Interpolate::NearestMode::CEIL,
+        ngraph::op::v4::Interpolate::NearestMode::ROUND_PREFER_CEIL,
+};
+
+const std::vector<bool> antialiasBenchmark = {
+        false,
+};
+
+const std::vector<std::vector<size_t>> padsBenchmark = {
+        {0, 0, 0, 0},
+        {0, 0, 1, 1},
+};
+
+const std::vector<double> cubeCoefsBenchmark = {
+        -0.75f,
+};
+
+const std::vector<std::vector<int64_t>> defaultAxesBenchmark = {
+    {0, 1, 2, 3}
+};
+
+const std::vector<fusingSpecificParams> interpolateFusingParamsBenchmark{
+        emptyFusingSpec,
+        // fusingSwish,
+        // fusingFakeQuantizePerTensorRelu,
+};
+
+std::vector<std::map<std::string, std::string>> filterAdditionalConfigBenchmark() {
+    // if (InferenceEngine::with_cpu_x86_avx512f()) {
+    //     return {
+    //         {{InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::NO}},
+    //         {{InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::YES}}
+    //     };
+    // } else {
+        return {
+            // default config as an stub for target without avx512, otherwise all tests with BF16 in its name are skipped
+            {{InferenceEngine::PluginConfigParams::KEY_PERF_COUNT, InferenceEngine::PluginConfigParams::YES}}
+        };
+    // }
+}
+
+// const auto interpolateCasesBenchmark = ::testing::Combine(
+//         ::testing::ValuesIn(interpolateModesBenchmark),       // InterpolateMode
+//         ::testing::Values(ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES),   // ShapeCalculationMode
+//         ::testing::ValuesIn(coordinateTransformModesBenchmark),    // CoordinateTransformMode
+//         ::testing::ValuesIn(nearestModesBenchmark),    // NearestMode
+//         ::testing::ValuesIn(antialiasBenchmark),       // AntiAlias
+//         ::testing::ValuesIn(padsBenchmark),        // PadBegin
+//         ::testing::ValuesIn(padsBenchmark),        // PadEnd
+//         ::testing::ValuesIn(cubeCoefsBenchmark),        // Cube coef
+//         ::testing::ValuesIn(defaultAxesBenchmark),        // Axes
+//         ::testing::Values(std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}));      // Scales
+
+const auto interpolateCornerCases = ::testing::Combine(
+        ::testing::ValuesIn(interpolateModesBenchmark),       // InterpolateMode
+        ::testing::ValuesIn(coordinateTransformModesBenchmark),    // CoordinateTransformMode
+        ::testing::ValuesIn(nearestModesBenchmark),    // NearestMode
+        ::testing::ValuesIn(antialiasBenchmark),       // AntiAlias
+        ::testing::ValuesIn(padsBenchmark),        // PadBegin
+        ::testing::ValuesIn(padsBenchmark),        // PadEnd
+        ::testing::ValuesIn(cubeCoefsBenchmark));        // Cube coef
+
+const std::vector<ShapeParams> shapeParamsBenchmark_04 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 1, 80, 1000}, {{1, 1, 80, 1000}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 1, 80, 5000}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+std::vector<CPUSpecificParams> filterCPUInfoForDeviceTestI8() {
+    std::vector<CPUSpecificParams> resCPUParams;
+    resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
+    return resCPUParams;
+}
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_04, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCornerCases,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_04),               // ShapeParams
+            // ::testing::ValuesIn({ElementType::f32, ElementType::i8}),     // ElementType
+            ::testing::Values(ElementType::i8),     // ElementType
+            // ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_04, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCornerCases,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_04),               // ShapeParams
+            ::testing::ValuesIn({ElementType::f32, ElementType::i8}),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_06 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 128, 6, 10}, {{1, 128, 6, 10}}},                // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 128, 24, 40}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_06, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCornerCases,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_06),               // ShapeParams
+            ::testing::ValuesIn({ElementType::f32, ElementType::i8}),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_06, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCornerCases,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_06),               // ShapeParams
+            ::testing::ValuesIn({ElementType::f32, ElementType::i8}),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+}  // namespace benchmark
 
 } // namespace CPULayerTestsDefinitions
