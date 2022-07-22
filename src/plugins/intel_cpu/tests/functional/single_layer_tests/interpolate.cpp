@@ -8,6 +8,7 @@
 #include "test_utils/fusing_test_utils.hpp"
 #include <common_test_utils/ov_tensor_utils.hpp>
 #include "openvino/core/preprocess/pre_post_process.hpp"
+#include "benchmark.hpp"
 
 using namespace ov::test;
 using namespace CPUTestUtils;
@@ -1008,5 +1009,451 @@ INSTANTIATE_TEST_SUITE_P(smoke_Interpolate_corner_Layout_Test, InterpolateLayerC
     InterpolateLayerCPUTest::getTestCaseName);
 
 } // namespace
+
+////////////////////////Benchmark/////////////////////////////
+namespace benchmark {
+
+struct InterpolateLayerCPUBenchmarkTest : BenchmarkLayerTest<InterpolateLayerCPUTest> {};
+
+TEST_P(InterpolateLayerCPUBenchmarkTest, benchmark) {
+    SKIP_IF_CURRENT_TEST_IS_DISABLED()
+    Run("Interpolate", std::chrono::milliseconds(2000), 100);
+}
+
+std::vector<ngraph::op::v4::Interpolate::InterpolateMode> interpolateModesBenchmark{
+    ngraph::op::v4::Interpolate::InterpolateMode::NEAREST,
+//     ngraph::op::v4::Interpolate::InterpolateMode::LINEAR,
+//     ngraph::op::v4::Interpolate::InterpolateMode::LINEAR_ONNX,
+//     ngraph::op::v4::Interpolate::InterpolateMode::CUBIC,
+};
+
+const std::vector<ngraph::op::v4::Interpolate::CoordinateTransformMode> coordinateTransformModesBenchmark = {
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::TF_HALF_PIXEL_FOR_NN,
+        // ngraph::op::v4::Interpolate::CoordinateTransformMode::PYTORCH_HALF_PIXEL,
+        // ngraph::op::v4::Interpolate::CoordinateTransformMode::HALF_PIXEL,
+        // ngraph::op::v4::Interpolate::CoordinateTransformMode::ASYMMETRIC,
+
+        // ngraph::op::v4::Interpolate::CoordinateTransformMode::ALIGN_CORNERS,
+};
+
+const std::vector<ngraph::op::v4::Interpolate::NearestMode> nearestModesBenchmark = {
+        ngraph::op::v4::Interpolate::NearestMode::SIMPLE,
+        // ngraph::op::v4::Interpolate::NearestMode::ROUND_PREFER_FLOOR,
+        // ngraph::op::v4::Interpolate::NearestMode::FLOOR,
+        // ngraph::op::v4::Interpolate::NearestMode::CEIL,
+        // ngraph::op::v4::Interpolate::NearestMode::ROUND_PREFER_CEIL,
+};
+
+const std::vector<bool> antialiasBenchmark = {
+        false,
+};
+
+const std::vector<std::vector<size_t>> padsBeginBenchmark = {
+        {0, 0, 0, 0},
+        {0, 0, 1, 1},
+};
+
+const std::vector<std::vector<size_t>> padsEndBenchmark = {
+        {0, 0, 0, 0}
+};
+const std::vector<double> cubeCoefsBenchmark = {
+        -0.75f,
+};
+
+const std::vector<std::vector<int64_t>> defaultAxesBenchmark = {
+    {0, 1, 2, 3}
+};
+
+const std::vector<fusingSpecificParams> interpolateFusingParamsBenchmark{
+        emptyFusingSpec,
+        // fusingSwish,
+        // fusingFakeQuantizePerTensorRelu,
+};
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
+std::vector<std::map<std::string, std::string>> filterAdditionalConfigBenchmark() {
+    // if (InferenceEngine::with_cpu_x86_avx512f()) {
+    //     return {
+    //         {{InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::NO}},
+    //         {{InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::YES}}
+    //     };
+    // } else {
+        return {
+            // default config as an stub for target without avx512, otherwise all tests with BF16 in its name are skipped
+            {{InferenceEngine::PluginConfigParams::KEY_PERF_COUNT, InferenceEngine::PluginConfigParams::YES}}
+        };
+    // }
+}
+
+std::vector<CPUSpecificParams> filterCPUInfoForDeviceTestI8() {
+    std::vector<CPUSpecificParams> resCPUParams;
+    // resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
+    // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
+    // resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
+    resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
+    resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
+    return resCPUParams;
+}
+
+#pragma GCC diagnostic pop
+
+const std::vector<ElementType> prcBenchmark = {ElementType::f32, ElementType::i8};
+// const std::vector<ElementType> prcBenchmark = {ElementType::f32};
+// const std::vector<ElementType> prcBenchmark = {ElementType::i8};
+
+const auto interpolateCasesBenchmark = ::testing::Combine(
+        ::testing::ValuesIn(interpolateModesBenchmark),       // InterpolateMode
+        ::testing::ValuesIn(coordinateTransformModesBenchmark),    // CoordinateTransformMode
+        ::testing::ValuesIn(nearestModesBenchmark),    // NearestMode
+        ::testing::ValuesIn(antialiasBenchmark),       // AntiAlias
+        ::testing::ValuesIn(padsBeginBenchmark),        // PadBegin
+        ::testing::ValuesIn(padsEndBenchmark),        // PadEnd
+        ::testing::ValuesIn(cubeCoefsBenchmark));        // Cube coef
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_00 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 1, 80, 9150}, {{1, 1, 80, 9150}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 1, 80, 100650}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_00, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_00),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_00, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_00),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_01 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 1, 128, 99550}, {{1, 1, 128, 99550}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 1, 128, 497750}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_01, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_01),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_01, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_01),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_02 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 1, 128, 196}, {{1, 1, 128, 196}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 1, 128, 53900}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_02, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_02),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_02, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_02),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_03 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 1, 80, 200}, {{1, 1, 80, 200}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 1, 80, 1000}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_03, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_03),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_03, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_03),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_04 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 1, 80, 1000}, {{1, 1, 80, 1000}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 1, 80, 5000}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_04, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_04),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_04, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_04),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_05 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 1, 80, 5000}, {{1, 1, 80, 5000}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 1, 80, 55000}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_05, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_05),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_05, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_05),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_06 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 128, 6, 10}, {{1, 128, 6, 10}}},                // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 128, 24, 40}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_06, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_06),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_06, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_06),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_07 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 128, 23, 40}, {{1, 128, 23, 40}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 128, 46, 80}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_07, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_07),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_07, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_07),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_08 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 64, 45, 80}, {{1, 64, 45, 80}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 64, 90, 160}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_08, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_08),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_08, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_08),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_09 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 32, 90, 160}, {{1, 32, 90, 160}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 32, 180, 320}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_09, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_09),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_09, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_09),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+const std::vector<ShapeParams> shapeParamsBenchmark_10 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 16, 180, 320}, {{1, 16, 180, 320}}},              // Input shapes
+        ngraph::helpers::InputLayerType::PARAMETER,                    // input type
+        {{1, 16, 360, 640}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_10, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_10),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_10, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_10),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
+
+
+}  // namespace benchmark
 
 } // namespace CPULayerTestsDefinitions
