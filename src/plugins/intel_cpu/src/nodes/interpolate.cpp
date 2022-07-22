@@ -2003,7 +2003,8 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
     };
 
     const auto &dataMinDims = getInputShapeAtPort(DATA_ID).getMinDims();
-    bool isBlkApplied = getInputShapeAtPort(DATA_ID).getRank() > 1 && dataMinDims[1] != Shape::UNDEFINED_DIM && dataMinDims[1] > 1;
+    // bool isBlkApplied = getInputShapeAtPort(DATA_ID).getRank() > 1 && dataMinDims[1] != Shape::UNDEFINED_DIM && dataMinDims[1] > 1;
+    bool isBlkApplied = getInputShapeAtPort(DATA_ID).getRank() > 1 && dataMinDims[1] != Shape::UNDEFINED_DIM;
 
     if (!mayiuse(cpu::x64::sse41) || interpAttrs.mode == InterpolateMode::linear) {
         pushDesc(LayoutType::ncsp, ref);
