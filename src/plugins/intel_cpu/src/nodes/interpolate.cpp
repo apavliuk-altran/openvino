@@ -103,11 +103,11 @@ struct jit_uni_interpolate_kernel_f32 : public jit_uni_interpolate_kernel, publi
 
                 switch (jcp_.layout) {
                     case InterpolateLayoutType::planar: {
-                        // if (jcp_.src_prc == InferenceEngine::Precision::I8) {
-                        //     nn_planar_byte();
-                        // } else {
+                        if (jcp_.src_prc == InferenceEngine::Precision::I8) {
+                            nn_planar_byte();
+                        } else {
                             nn_planar();
-                        // }
+                        }
                         break;
                     }
                     case InterpolateLayoutType::block: {
@@ -270,6 +270,16 @@ private:
             std::make_shared<store_emitter_context>(Precision::FP32, jcp_.dst_prc, elt_num, offset),
             {store_pool_vec_idxs}, {store_pool_gpr_idxs});
     }
+    inline void load_byte(const Xbyak::Reg64& reg_src, Vmm& vmm, const int& elt_num, const int& offset = 0) {
+        load_emitter->emit_code({static_cast<size_t>(reg_src.getIdx())}, {static_cast<size_t>(vmm.getIdx())},
+            std::make_shared<load_emitter_context>(jcp_.src_prc, Precision::I8, elt_num, offset),
+            {}, {load_pool_gpr_idxs});
+    }
+    inline void store_byte(const Vmm& vmm, const Xbyak::Reg64& reg_dst, const int& elt_num, const int& offset = 0) {
+        store_emitter->emit_code({static_cast<size_t>(vmm.getIdx())}, {static_cast<size_t>(reg_dst.getIdx())},
+            std::make_shared<store_emitter_context>(Precision::I8, jcp_.dst_prc, elt_num, offset),
+            {store_pool_vec_idxs}, {store_pool_gpr_idxs});
+    }
     inline void load_weights(const Xbyak::Reg64& reg_weights, Vmm& vmm, const int& elt_num, const int& offset = 0) {
         load_emitter->emit_code({static_cast<size_t>(reg_weights.getIdx())}, {static_cast<size_t>(vmm.getIdx())},
             std::make_shared<load_emitter_context>(Precision::FP32, Precision::FP32, elt_num, offset),
@@ -278,36 +288,87 @@ private:
 
     using reg64_t = const Xbyak::Reg64;
 
-    std::array<Vmm, 4>{ Vmm(10), Vmm(11), Vmm(12), Vmm(13) };
+    // std::array<Vmm, 4> mem_offsets {Vmm(10), Vmm(11), Vmm(12), Vmm(13)};
 
-    inline void custom_uni_vgatherdps(const Vmm &vmm_arg, reg64_t &mem_base, const Vmm &mem_offset, Vmm &vmm_mask) {
-        if (jcp_.src_prc != InferenceEngine::Precision::FP32) {
-            emulate_gather(vmm_arg, mem_base, mem_offset);
-            return;
+    inline void emulate_gather_byte(const Xbyak::Xmm &xmm_arg, const reg64_t &mem_base, const Xmm &mem_offset,
+                                    int byte_offset) {
+        constexpr int xmm_size = 16; // bytes
+        const size_t src_prc_size = jcp_.src_prc.size();
+        if (src_prc_size != 1) {
+            IE_THROW() << "The data type of size '" << src_prc_size << "' is not supported.";
         }
-        switch (isa) {
-            case x64::avx2:
-                uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-                vgatherdps(vmm_arg, ptr[mem_base + mem_offset], vmm_mask);
-                break;
-            case x64::avx512_core:
-                kxnord(k_mask, k_mask, k_mask);
-                vgatherdps(vmm_arg | k_mask, ptr[mem_base + mem_offset]);
-                break;
-            case x64::sse41:
-                emulate_gather(vmm_arg, mem_base, mem_offset);
-                break;
-            default: IE_THROW() << "Got unsupported instruction set.";
+        constexpr int float_int_size = 4;
+        const int xmm_block_size = xmm_size / float_int_size;
+        for (int i = 0; i < xmm_block_size; i++) {
+            xor_(reg_table, reg_table);
+            Xbyak::Reg32 low_reg_table = Xbyak::Reg32(reg_table.getIdx());
+            uni_vpextrd(low_reg_table, mem_offset, i);
+            add(reg_table, mem_base);
+            Xbyak::Address addr = ptr[reg_table];
+            uni_vpinsrb(xmm_arg, xmm_arg, addr, i + byte_offset * xmm_block_size);
         }
     }
+
+    inline void emulate_gather_byte(const Xbyak::Xmm &xmm_arg, const reg64_t &mem_base, const reg64_t &reg_index) {
+        // constexpr int float_int_size = 4;
+        // for (int i = 0; i < float_int_size; ++i) {
+        //     uni_vmovdqu(vmm_index, ptr[reg_index + float_int_size * i * sizeof(int32_t)]);
+        //     // TODO: use wider Ymm vmm_index
+        //     emulate_gather_byte(xmm_arg, mem_base, vmm_index, i, 0);
+        // }
+        IE_THROW() << "emulate_gather_byte() fo xmm shouldn't be called";
+    }
+
+    Xbyak::Xmm xmm_aux = Xbyak::Xmm(15);
+    // Xbyak::Xmm offset_aux = Xbyak::Xmm(14);
+
+    inline void emulate_gather_byte(const Xbyak::Ymm &ymm_arg, const reg64_t &mem_base, const reg64_t &reg_index) {
+        constexpr int float_int_size = 4;
+        constexpr int xmm_size = 16; // bytes
+        Xbyak::Xmm low_xmm = Xbyak::Xmm(ymm_arg.getIdx());
+        Xbyak::Xmm low_offset = Xbyak::Xmm(vmm_index.getIdx());
+        for (int i = 0; i < float_int_size; ++i) {
+            uni_vmovdqu(low_offset, ptr[reg_index + i * xmm_size]);
+            // TODO: use wider Ymm vmm_index
+            emulate_gather_byte(low_xmm, mem_base, low_offset, i);
+        }
+        constexpr int offset = float_int_size * xmm_size;
+        for (int i = 0; i < float_int_size; ++i) {
+            uni_vmovdqu(low_offset, ptr[reg_index + offset + i * xmm_size]);
+            // TODO: use wider Ymm vmm_index
+            emulate_gather_byte(xmm_aux, mem_base, low_offset, i);
+        }
+        vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
+    }
+
+    // inline void custom_uni_vgatherdps(const Vmm &vmm_arg, reg64_t &mem_base, const Vmm &mem_offset, Vmm &vmm_mask) {
+    //     if (jcp_.src_prc != InferenceEngine::Precision::FP32) {
+    //         emulate_gather(vmm_arg, mem_base, mem_offset);
+    //         return;
+    //     }
+    //     switch (isa) {
+    //         case x64::avx2:
+    //             uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+    //             vgatherdps(vmm_arg, ptr[mem_base + mem_offset], vmm_mask);
+    //             break;
+    //         case x64::avx512_core:
+    //             kxnord(k_mask, k_mask, k_mask);
+    //             vgatherdps(vmm_arg | k_mask, ptr[mem_base + mem_offset]);
+    //             break;
+    //         case x64::sse41:
+    //             emulate_gather(vmm_arg, mem_base, mem_offset);
+    //             break;
+    //         default: IE_THROW() << "Got unsupported instruction set.";
+    //     }
+    // }
 
     // inline void emulate_gather(const Xbyak::Xmm &xmm_arg, reg64_t &mem_base, const Xmm &mem_offset, int xmm_offset = 0) {
     //     const int xmm_size = 16; // bytes
     //     // const int xmm_block_size = xmm_size / jpp.dtype_size;
     //     const size_t src_prc_size = jcp_.src_prc.size();
-    //     // const int xmm_block_size = xmm_size / src_prc_size;
-    //     constexpr int float_int_size = 4;
-    //     const int xmm_block_size = xmm_size / float_int_size;
+    //     const int xmm_block_size = xmm_size / src_prc_size;
+    //     // constexpr int float_int_size = 4;
+    //     // const int xmm_block_size = xmm_size / float_int_size;
     //     // const int offset = xmm_offset * jpp.SW * jpp.dtype_size * xmm_block_size;
     //     // const int offset = xmm_offset * src_prc_size * xmm_block_size;
     //     // const int offset = xmm_offset * xmm_size;
@@ -320,7 +381,7 @@ private:
     //         // uni_vpextrd(edx, mem_offset, i);
     //         // uni_vpextrd(reg_table, mem_offset, i);
     //         Xbyak::Reg32 low_reg_table = Xbyak::Reg32(reg_table.getIdx());
-    //         uni_vpextrd(low_reg_table, mem_offset, i);
+    //         uni_vpextrd(low_reg_table, mem_offset, i * src_prc_size / sizeof(int32_t));
     //         // imul(reg_table, reg_table, src_prc_size);
     //         add(reg_table, mem_base);
     //         // Xbyak::Address addr = ptr[mem_base + i * 1 * src_prc_size + offset];
@@ -350,76 +411,27 @@ private:
     //     }
     // }
 
-    inline void emulate_gather(const Xbyak::Xmm &xmm_arg, reg64_t &mem_base, const Xmm &mem_offset, int xmm_offset = 0) {
-        const int xmm_size = 16; // bytes
-        // const int xmm_block_size = xmm_size / jpp.dtype_size;
-        const size_t src_prc_size = jcp_.src_prc.size();
-        const int xmm_block_size = xmm_size / src_prc_size;
-        // constexpr int float_int_size = 4;
-        // const int xmm_block_size = xmm_size / float_int_size;
-        // const int offset = xmm_offset * jpp.SW * jpp.dtype_size * xmm_block_size;
-        // const int offset = xmm_offset * src_prc_size * xmm_block_size;
-        // const int offset = xmm_offset * xmm_size;
-        // uni_vpxor(xmm_arg, xmm_arg, xmm_arg);
-        for (int i = 0; i < xmm_block_size; i++) {
-        // for (int i = 0; i < xmm_size / jcp_.dst_prc.size(); i++) {
-            // Xbyak::Address addr = ptr[mem_base + i * jpp.SW * jpp.dtype_size + offset];
-            // xor_(reg_table, reg_table);
-            // uni_vpextrd(Xbyak::Reg32(reg_table.getIdx()), mem_offset, i);
-            // uni_vpextrd(edx, mem_offset, i);
-            // uni_vpextrd(reg_table, mem_offset, i);
-            Xbyak::Reg32 low_reg_table = Xbyak::Reg32(reg_table.getIdx());
-            uni_vpextrd(low_reg_table, mem_offset, i * src_prc_size / sizeof(int32_t));
-            // imul(reg_table, reg_table, src_prc_size);
-            add(reg_table, mem_base);
-            // Xbyak::Address addr = ptr[mem_base + i * 1 * src_prc_size + offset];
-            // Xbyak::Address addr = ptr[reg_table + i * src_prc_size + offset];
-            Xbyak::Address addr = ptr[reg_table];
-            // switch (jpp.dtype_size) {
-            switch (src_prc_size) {
-                // case 4: uni_vpinsrd(xmm_arg, xmm_arg, addr, i); break;
-                case 4: vinsertps(xmm_arg, xmm_arg, addr, i << 4); break;
-                case 2: uni_vpinsrw(xmm_arg, xmm_arg, addr, i); break;
-                case 1:
-                    // mov(al, addr);
-                    // cbw();
-                    // cwde();
-                    uni_vpinsrb(xmm_arg, xmm_arg, addr, i); break;
-                    // uni_vpinsrd(xmm_arg, xmm_arg, eax, i);
-                    break;
-                // default: IE_THROW() << "The data type of size '" << jpp.dtype_size << "' is not supported.";
-                default: IE_THROW() << "The data type of size '" << src_prc_size << "' is not supported.";
-            }
-        }
-        // switch (src_prc_size) {
-        //     case 1:
-        //         uni_vpmovsxbd(xmm_arg, xmm_arg);
-        //         uni_vcvtdq2ps(xmm_arg, xmm_arg);
-        //         break;
-        // }
-    }
+    // Xbyak::Xmm xmm_aux = Xbyak::Xmm(15);
+    // Xbyak::Xmm offset_aux = Xbyak::Xmm(14);
 
-    Xbyak::Xmm xmm_aux = Xbyak::Xmm(15);
-    Xbyak::Xmm offset_aux = Xbyak::Xmm(14);
+    // inline void emulate_gather(const Xbyak::Ymm &ymm_arg, reg64_t &mem_base, const Ymm &mem_offset) {
+    //     Xbyak::Xmm low_xmm = Xbyak::Xmm(ymm_arg.getIdx());
+    //     Xbyak::Xmm low_offset = Xbyak::Xmm(mem_offset.getIdx());
+    //     emulate_gather(low_xmm, mem_base, low_offset, 0);
+    //     vextracti128(offset_aux, mem_offset, 1);
+    //     emulate_gather(xmm_aux, mem_base, offset_aux, 1);
+    //     vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
+    // }
 
-    inline void emulate_gather(const Xbyak::Ymm &ymm_arg, reg64_t &mem_base, const Ymm &mem_offset) {
-        Xbyak::Xmm low_xmm = Xbyak::Xmm(ymm_arg.getIdx());
-        Xbyak::Xmm low_offset = Xbyak::Xmm(mem_offset.getIdx());
-        emulate_gather(low_xmm, mem_base, low_offset, 0);
-        vextracti128(offset_aux, mem_offset, 1);
-        emulate_gather(xmm_aux, mem_base, offset_aux, 1);
-        vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
-    }
-
-    inline void emulate_gather(const Xbyak::Zmm &zmm_arg, reg64_t &mem_base, const Zmm &mem_offset) {
-        Xbyak::Xmm low_xmm = Xbyak::Xmm(zmm_arg.getIdx());
-        emulate_gather(low_xmm, mem_base, mem_offset, 0);
-        for (int i = 1; i < 4; i++) {
-            // ----------ADD INDEX EXTRACTION-------------
-            emulate_gather(xmm_aux, mem_base, mem_offset, i);
-            vinserti64x2(zmm_arg, zmm_arg, xmm_aux, i);
-        }
-    }
+    // inline void emulate_gather(const Xbyak::Zmm &zmm_arg, reg64_t &mem_base, const Zmm &mem_offset) {
+    //     Xbyak::Xmm low_xmm = Xbyak::Xmm(zmm_arg.getIdx());
+    //     emulate_gather(low_xmm, mem_base, mem_offset, 0);
+    //     for (int i = 1; i < 4; i++) {
+    //         // ----------ADD INDEX EXTRACTION-------------
+    //         emulate_gather(xmm_aux, mem_base, mem_offset, i);
+    //         vinserti64x2(zmm_arg, zmm_arg, xmm_aux, i);
+    //     }
+    // }
 
     void nn_planar() {
         std::cout << "=========================nn_planar()=================================\n";
@@ -470,8 +482,8 @@ private:
 
                 uni_vmovdqu(vmm_index, ptr[reg_index]);
                 uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-                // vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
-                custom_uni_vgatherdps(vmm_val, reg_src_h, vmm_index, vmm_mask);
+                vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
+                // custom_uni_vgatherdps(vmm_val, reg_src_h, vmm_index, vmm_mask);
                 // gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false);
                 // uni_vmovdqu(vmm_val, ptr[reg_src_h + vmm_index]);
                 // mov(reg_src_aux, ptr[reg_src_h + reg_index]);
@@ -539,8 +551,6 @@ private:
         Xbyak::Reg64 reg_work_amount_oh = rdi;
         mov(reg_work_amount_oh, jcp_.OH);
 
-        // sub(rsp, vlen);
-
         L(out_loop_label);
         {
             // outloop status
@@ -558,7 +568,7 @@ private:
 
             // reset index_w, index_w * dataSize done when built to avoid redundent compute
             mov(reg_index, reg_index_w);
-            int step = vlen / sizeof(int);
+            int step = vlen / sizeof(int8_t);
 
             Xbyak::Label nn_loop_label;
             Xbyak::Label nn_loop_end_label;
@@ -570,20 +580,15 @@ private:
                 cmp(reg_work_amount, step);
                 jl(nn_loop_end_label, T_NEAR);
 
-                uni_vmovdqu(vmm_index, ptr[reg_index]);
-                uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-                // vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
-                custom_uni_vgatherdps(vmm_val, reg_src_h, vmm_index, vmm_mask);
-                // gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false);
-                // uni_vmovdqu(vmm_val, ptr[reg_src_h + vmm_index]);
-                // mov(reg_src_aux, ptr[reg_src_h + reg_index]);
-                // load(reg_src_aux, vmm_val, step);
-                if (attr_.post_ops_.len() != 0)
-                    apply_post_ops(jcp_.dst_prc, 1);
-                store(vmm_val, reg_dst, step);
-
-                // mov(reg_src_aux, ptr[rbp + vlen]);
-                // store(vmm_val, reg_src_aux, step);
+                // uni_vmovdqu(vmm_index, ptr[reg_index]);
+                // uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+                // custom_uni_vgatherdps(vmm_val, reg_src_h, vmm_index, vmm_mask);
+                emulate_gather_byte(vmm_val, reg_src_h, reg_index);
+                if (attr_.post_ops_.len() != 0) {
+                    // apply_post_ops(jcp_.dst_prc, 1);
+                    IE_THROW() << "Interpolate I8 doesn't support fusing";
+                }
+                store_byte(vmm_val, reg_dst, step);
 
                 add(reg_dst, step * jcp_.dst_data_size);
                 add(reg_index, step * jcp_.indices_size);
@@ -603,10 +608,14 @@ private:
                 mov(reg_index_offset, dword[reg_index]);
                 add(reg_src_aux, reg_index_offset);
 
-                load(reg_src_aux, vmm_val, step);
-                if (attr_.post_ops_.len() != 0)
-                    apply_post_ops(jcp_.dst_prc, 1);
-                store(vmm_val, reg_dst, step);
+                load_byte(reg_src_aux, vmm_val, step);
+                // load(reg_src_aux, vmm_val, step);
+                if (attr_.post_ops_.len() != 0) {
+                    // apply_post_ops(jcp_.dst_prc, 1);
+                    IE_THROW() << "Interpolate I8 doesn't support fusing";
+                }
+                store_byte(vmm_val, reg_dst, step);
+                // store(vmm_val, reg_dst, step);
 
                 add(reg_dst, step * jcp_.dst_data_size);
                 add(reg_index, step * jcp_.indices_size);
