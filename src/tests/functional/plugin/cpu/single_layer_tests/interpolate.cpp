@@ -885,38 +885,20 @@ const std::vector<ShapeParams> shapeParamsBenchmark_04 = {
     }
 };
 
-// INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_04, InterpolateLayerTest, ::testing::Combine(
-//         interpolateCasesBenchmark,
-//         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
-//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
-//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Output precision
-//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Input layout
-//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Output layout
-//         ::testing::Values(std::vector<size_t>{1, 1, 80, 1000}),                            // Input shapes
-//         ::testing::Values(std::vector<size_t>{1, 1, 80, 5000}),                          // Target shapes
-//         ::testing::Values(CommonTestUtils::DEVICE_CPU),                   // Device name
-//         ::testing::Values(additional_config)),                          // Additional network configuration
-//     InterpolateLayerTest::getTestCaseName);
-
-// INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_04, InterpolateLayerBenchmarkTest, ::testing::Combine(
-//         interpolateCasesBenchmark,
-//         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
-//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
-//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Output precision
-//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Input layout
-//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Output layout
-//         ::testing::Values(std::vector<size_t>{1, 1, 80, 1000}),                            // Input shapes
-//         ::testing::Values(std::vector<size_t>{1, 1, 80, 5000}),                          // Target shapes
-//         ::testing::Values(CommonTestUtils::DEVICE_CPU),                   // Device name
-//         ::testing::Values(additional_config)),                          // Additional network configuration
-//     InterpolateLayerBenchmarkTest::getTestCaseName);
+std::vector<CPUSpecificParams> filterCPUInfoForDeviceTestI8() {
+    std::vector<CPUSpecificParams> resCPUParams;
+    resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
+    return resCPUParams;
+}
 
 INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_04, InterpolateLayerCPUTest,
         ::testing::Combine(
             interpolateCornerCases,                                     // InterpolateSpecificParams
             ::testing::ValuesIn(shapeParamsBenchmark_04),               // ShapeParams
-            ::testing::ValuesIn({ElementType::f32, ElementType::i8}),     // ElementType
-            ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
+            // ::testing::ValuesIn({ElementType::f32, ElementType::i8}),     // ElementType
+            ::testing::Values(ElementType::i8),     // ElementType
+            // ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
             ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
             ::testing::ValuesIn(filterAdditionalConfig())),             // AdditionalConfig
     InterpolateLayerCPUTest::getTestCaseName);
@@ -941,32 +923,6 @@ const std::vector<ShapeParams> shapeParamsBenchmark_06 = {
         defaultAxesBenchmark.front()                                   // axes
     }
 };
-
-// INSTANTIATE_TEST_SUITE_P(Interpolate_I8_Test_06, InterpolateLayerTest, ::testing::Combine(
-//         interpolateCasesBenchmark,
-//         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
-//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
-//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Output precision
-//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Input layout
-//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Output layout
-//         ::testing::Values(std::vector<size_t>{1, 128, 6, 10}),                            // Input shapes
-//         ::testing::Values(std::vector<size_t>{1, 128, 24, 40}),                          // Target shapes
-//         ::testing::Values(CommonTestUtils::DEVICE_CPU),                   // Device name
-//         ::testing::Values(additional_config)),                          // Additional network configuration
-//     InterpolateLayerTest::getTestCaseName);
-
-// INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_Test_06, InterpolateLayerBenchmarkTest, ::testing::Combine(
-//         interpolateCasesBenchmark,
-//         ::testing::ValuesIn(std::vector<InferenceEngine::Precision>{InferenceEngine::Precision::FP32, InferenceEngine::Precision::I8}), // Net precision
-//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Input precision
-//         ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),       // Output precision
-//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Input layout
-//         ::testing::Values(InferenceEngine::Layout::ANY),                  // Output layout
-//         ::testing::Values(std::vector<size_t>{1, 128, 6, 10}),                            // Input shapes
-//         ::testing::Values(std::vector<size_t>{1, 128, 24, 40}),                          // Target shapes
-//         ::testing::Values(CommonTestUtils::DEVICE_CPU),                   // Device name
-//         ::testing::Values(additional_config)),                          // Additional network configuration
-//     InterpolateLayerBenchmarkTest::getTestCaseName);
 
 INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_06, InterpolateLayerCPUTest,
         ::testing::Combine(
