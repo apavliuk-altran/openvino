@@ -274,19 +274,19 @@ namespace {
 /* CPU PARAMS */
 std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
     std::vector<CPUSpecificParams> resCPUParams;
-    if (InferenceEngine::with_cpu_x86_avx512f()) {
-        resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
-        resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx512"}, "jit_avx512"});
-    } else if (InferenceEngine::with_cpu_x86_avx2()) {
+    // if (InferenceEngine::with_cpu_x86_avx512f()) {
+    //     resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
+    //     resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx512"}, "jit_avx512"});
+    // } else if (InferenceEngine::with_cpu_x86_avx2()) {
         resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
         resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
         resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
-    } else if (InferenceEngine::with_cpu_x86_sse42()) {
-        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
-        resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
-    } else {
-        resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"ref"}, "ref"});
-    }
+    // } else if (InferenceEngine::with_cpu_x86_sse42()) {
+    //     resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
+    //     resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
+    // } else {
+    //     resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"ref"}, "ref"});
+    // }
     return resCPUParams;
 }
 /* ========== */
@@ -840,18 +840,18 @@ const std::vector<fusingSpecificParams> interpolateFusingParamsBenchmark{
         // fusingFakeQuantizePerTensorRelu,
 };
 
-std::vector<std::map<std::string, std::string>> filterAdditionalConfig() {
-    if (InferenceEngine::with_cpu_x86_avx512f()) {
-        return {
-            {{InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::NO}},
-            {{InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::YES}}
-        };
-    } else {
+std::vector<std::map<std::string, std::string>> filterAdditionalConfigBenchmark() {
+    // if (InferenceEngine::with_cpu_x86_avx512f()) {
+    //     return {
+    //         {{InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::NO}},
+    //         {{InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::YES}}
+    //     };
+    // } else {
         return {
             // default config as an stub for target without avx512, otherwise all tests with BF16 in its name are skipped
             {{InferenceEngine::PluginConfigParams::KEY_PERF_COUNT, InferenceEngine::PluginConfigParams::YES}}
         };
-    }
+    // }
 }
 
 // const auto interpolateCasesBenchmark = ::testing::Combine(
@@ -900,7 +900,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_04, InterpolateLayerCPUTest,
             // ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
             ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
             ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
-            ::testing::ValuesIn(filterAdditionalConfig())),             // AdditionalConfig
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
     InterpolateLayerCPUTest::getTestCaseName);
 
 INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_04, InterpolateLayerCPUBenchmarkTest,
@@ -910,7 +910,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_04, InterpolateLayerCPUB
             ::testing::ValuesIn({ElementType::f32, ElementType::i8}),     // ElementType
             ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
             ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
-            ::testing::ValuesIn(filterAdditionalConfig())),             // AdditionalConfig
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
     InterpolateLayerCPUBenchmarkTest::getTestCaseName);
 
 
@@ -931,7 +931,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_06, InterpolateLayerCPUTest,
             ::testing::ValuesIn({ElementType::f32, ElementType::i8}),     // ElementType
             ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
             ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
-            ::testing::ValuesIn(filterAdditionalConfig())),             // AdditionalConfig
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
     InterpolateLayerCPUTest::getTestCaseName);
 
 INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_06, InterpolateLayerCPUBenchmarkTest,
@@ -941,7 +941,7 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_06, InterpolateLayerCPUB
             ::testing::ValuesIn({ElementType::f32, ElementType::i8}),     // ElementType
             ::testing::ValuesIn(filterCPUInfoForDevice()),              // CPUSpecificParams
             ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
-            ::testing::ValuesIn(filterAdditionalConfig())),             // AdditionalConfig
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
     InterpolateLayerCPUBenchmarkTest::getTestCaseName);
 
 }  // namespace benchmark
