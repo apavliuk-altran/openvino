@@ -297,15 +297,16 @@ private:
         if (src_prc_size != 1) {
             IE_THROW() << "The data type of size '" << src_prc_size << "' is not supported.";
         }
-        constexpr int float_int_size = 4;
-        const int xmm_block_size = xmm_size / float_int_size;
-        for (int i = 0; i < xmm_block_size; i++) {
-            xor_(reg_table, reg_table);
+        constexpr int indices_size = sizeof(int32_t);
+        const int xmm_ind_count = xmm_size / indices_size;
+        for (int i = 0; i < xmm_ind_count; i++) {
+            // xor_(reg_table, reg_table);
             Xbyak::Reg32 low_reg_table = Xbyak::Reg32(reg_table.getIdx());
             uni_vpextrd(low_reg_table, mem_offset, i);
             add(reg_table, mem_base);
-            Xbyak::Address addr = ptr[reg_table];
-            uni_vpinsrb(xmm_arg, xmm_arg, addr, i + byte_offset * xmm_block_size);
+            // Xbyak::Address addr = ;
+            // uni_vpinsrb(xmm_arg, xmm_arg, addr, i + byte_offset * xmm_ind_count);
+            uni_vpinsrb(xmm_arg, xmm_arg, ptr[reg_table], i + byte_offset * xmm_ind_count);
         }
     }
 
@@ -322,22 +323,57 @@ private:
     Xbyak::Xmm xmm_aux = Xbyak::Xmm(15);
     // Xbyak::Xmm offset_aux = Xbyak::Xmm(14);
 
+    // inline void emulate_gather_byte(const Xbyak::Ymm &ymm_arg, const reg64_t &mem_base, const reg64_t &reg_index) {
+    //     constexpr int indices_to_byte_ratio = sizeof(int32_t) / sizeof(int8_t);
+    //     // constexpr int xmm_size = 16; // bytes
+    //     constexpr int ymm_size = 32; // bytes
+    //     // constexpr int offset = indices_to_byte_ratio * xmm_size;
+    //     // constexpr int offset = indices_to_byte_ratio * ymm_size / 2;
+    //     constexpr int offset = ymm_size;
+    //     Xbyak::Xmm low_xmm = Xbyak::Xmm(ymm_arg.getIdx());
+    //     Xbyak::Xmm low_offset = Xbyak::Xmm(vmm_index.getIdx());
+    //     for (int i = 0; i < indices_to_byte_ratio; i += 2) {
+    //         // uni_vmovdqu(low_offset, ptr[reg_index + i * xmm_size]);
+    //         uni_vmovdqu(vmm_index, ptr[reg_index + i * ymm_size]);
+    //         // TODO: use wider Ymm vmm_index
+    //         emulate_gather_byte(low_xmm, mem_base, low_offset, i);
+    //         vextracti128(low_offset, vmm_index, 1);
+    //         emulate_gather_byte(low_xmm, mem_base, low_offset, i + 1);
+    //         // uni_vmovdqu(low_offset, ptr[reg_index + offset + i * xmm_size]);
+    //         uni_vmovdqu(vmm_index, ptr[reg_index + offset + i * ymm_size]);
+    //         // TODO: use wider Ymm vmm_index
+    //         emulate_gather_byte(xmm_aux, mem_base, low_offset, i);
+    //         vextracti128(low_offset, vmm_index, 1);
+    //         emulate_gather_byte(xmm_aux, mem_base, low_offset, i + 1);
+    //     }
+    //     vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
+    // }
+
     inline void emulate_gather_byte(const Xbyak::Ymm &ymm_arg, const reg64_t &mem_base, const reg64_t &reg_index) {
-        constexpr int float_int_size = 4;
-        constexpr int xmm_size = 16; // bytes
+        constexpr int ymm_size = 32; // bytes
         Xbyak::Xmm low_xmm = Xbyak::Xmm(ymm_arg.getIdx());
         Xbyak::Xmm low_offset = Xbyak::Xmm(vmm_index.getIdx());
-        for (int i = 0; i < float_int_size; ++i) {
-            uni_vmovdqu(low_offset, ptr[reg_index + i * xmm_size]);
-            // TODO: use wider Ymm vmm_index
-            emulate_gather_byte(low_xmm, mem_base, low_offset, i);
-        }
-        constexpr int offset = float_int_size * xmm_size;
-        for (int i = 0; i < float_int_size; ++i) {
-            uni_vmovdqu(low_offset, ptr[reg_index + offset + i * xmm_size]);
-            // TODO: use wider Ymm vmm_index
-            emulate_gather_byte(xmm_aux, mem_base, low_offset, i);
-        }
+
+        uni_vmovdqu(vmm_index, ptr[reg_index]);
+        emulate_gather_byte(low_xmm, mem_base, low_offset, 0);
+        vextracti128(low_offset, vmm_index, 1);
+        emulate_gather_byte(low_xmm, mem_base, low_offset, 1);
+
+        uni_vmovdqu(vmm_index, ptr[reg_index + ymm_size]);
+        emulate_gather_byte(low_xmm, mem_base, low_offset, 2);
+        vextracti128(low_offset, vmm_index, 1);
+        emulate_gather_byte(low_xmm, mem_base, low_offset, 3);
+
+        uni_vmovdqu(vmm_index, ptr[reg_index + ymm_size * 2]);
+        emulate_gather_byte(xmm_aux, mem_base, low_offset, 0);
+        vextracti128(low_offset, vmm_index, 1);
+        emulate_gather_byte(xmm_aux, mem_base, low_offset, 1);
+
+        uni_vmovdqu(vmm_index, ptr[reg_index + ymm_size * 3]);
+        emulate_gather_byte(xmm_aux, mem_base, low_offset, 2);
+        vextracti128(low_offset, vmm_index, 1);
+        emulate_gather_byte(xmm_aux, mem_base, low_offset, 3);
+
         vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
     }
 
