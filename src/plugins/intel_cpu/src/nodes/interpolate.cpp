@@ -398,9 +398,9 @@ private:
     }
 
     void nn_planar() {
+        std::cout << "=========================nn_planar()=================================\n";
         const bool is_i8 = jcp_.src_prc == InferenceEngine::Precision::I8
                            && jcp_.dst_prc == InferenceEngine::Precision::I8;
-
         Xbyak::Reg64 reg_index_h = reg_src_aux1;
         Xbyak::Reg64 reg_index_w = reg_src_aux2;
         mov(reg_index_h, reg_index);
@@ -506,6 +506,7 @@ private:
     }
 
     void nn_blk() {
+        std::cout << "=========================nn_blk()=================================\n";
         Xbyak::Label nn_loop_label;
         Xbyak::Label nn_loop_end_label;
         L(nn_loop_label);
@@ -544,6 +545,7 @@ private:
     }
 
     void nn_by_channel() {
+        std::cout << "=========================nn_by_channel()=================================\n";
         // kernel for C * OW
         Xbyak::Label out_loop_label;
         Xbyak::Label out_loop_end;
@@ -620,6 +622,7 @@ private:
     }
 
     void linear_onnx_c_gathered() {
+        std::cout << "=========================linear_onnx_c_gathered()=================================\n";
         mov(reg_dst, ptr[reg_params + GET_OFF(dst)]);
         // load weight
         mov(reg_src, ptr[reg_params + GET_OFF(weight_ptr[0])]);
@@ -799,6 +802,7 @@ private:
     }
 
     void linear_onnx_planar() {
+        std::cout << "=========================linear_onnx_planar()=================================\n";
         mov(reg_dst, ptr[reg_params + GET_OFF(dst)]);
         mov(reg_src, ptr[reg_params + GET_OFF(src_ptr[0])]);
         mov(reg_index, ptr[reg_params + GET_OFF(index)]);
@@ -991,6 +995,7 @@ private:
     }
 
     void cubic_c_gathered() {
+        std::cout << "=========================cubic_c_gathered()=================================\n";
         mov(reg_dst, ptr[reg_params + GET_OFF(dst)]);
         mov(reg_src, ptr[reg_params + GET_OFF(src_ptr[0])]);
         mov(reg_index, ptr[reg_params + GET_OFF(index)]);
@@ -1130,6 +1135,7 @@ private:
     }
 
     void cubic_planar() {
+        std::cout << "=========================cubic_planar()=================================\n";
         mov(reg_table, l_table_constant);
         // src_ptr[2] for oh sequence, src_ptr[3] for ow sequence
         mov(reg_tbl_y, ptr[reg_params + GET_OFF(src_ptr[0]) + 2 * sizeof(size_t)]);
