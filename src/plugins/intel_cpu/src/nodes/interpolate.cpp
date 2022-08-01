@@ -302,11 +302,11 @@ private:
         for (int i = 0; i < xmm_ind_count; i++) {
             // xor_(reg_table, reg_table);
             Xbyak::Reg32 low_reg_table = Xbyak::Reg32(reg_table.getIdx());
-            uni_vpextrd(low_reg_table, mem_offset, i);
+            vpextrd(low_reg_table, mem_offset, i);
             add(reg_table, mem_base);
             // Xbyak::Address addr = ;
             // uni_vpinsrb(xmm_arg, xmm_arg, addr, i + byte_offset * xmm_ind_count);
-            uni_vpinsrb(xmm_arg, xmm_arg, ptr[reg_table], i + byte_offset * xmm_ind_count);
+            vpinsrb(xmm_arg, xmm_arg, ptr[reg_table], i + byte_offset * xmm_ind_count);
         }
     }
 
@@ -321,7 +321,7 @@ private:
     }
 
     Xbyak::Xmm xmm_aux = Xbyak::Xmm(15);
-    // Xbyak::Xmm offset_aux = Xbyak::Xmm(14);
+    Xbyak::Xmm offset_aux = Xbyak::Xmm(14);
 
     // inline void emulate_gather_byte(const Xbyak::Ymm &ymm_arg, const reg64_t &mem_base, const reg64_t &reg_index) {
     //     constexpr int indices_to_byte_ratio = sizeof(int32_t) / sizeof(int8_t);
@@ -354,25 +354,29 @@ private:
         Xbyak::Xmm low_xmm = Xbyak::Xmm(ymm_arg.getIdx());
         Xbyak::Xmm low_offset = Xbyak::Xmm(vmm_index.getIdx());
 
-        uni_vmovdqu(vmm_index, ptr[reg_index]);
+        vmovdqu(vmm_index, ptr[reg_index]);
+        vextracti128(offset_aux, vmm_index, 1);
+        vzeroupper();
         emulate_gather_byte(low_xmm, mem_base, low_offset, 0);
-        vextracti128(low_offset, vmm_index, 1);
-        emulate_gather_byte(low_xmm, mem_base, low_offset, 1);
+        emulate_gather_byte(low_xmm, mem_base, offset_aux, 1);
 
-        uni_vmovdqu(vmm_index, ptr[reg_index + ymm_size]);
+        vmovdqu(vmm_index, ptr[reg_index + ymm_size]);
+        vextracti128(offset_aux, vmm_index, 1);
+        vzeroupper();
         emulate_gather_byte(low_xmm, mem_base, low_offset, 2);
-        vextracti128(low_offset, vmm_index, 1);
-        emulate_gather_byte(low_xmm, mem_base, low_offset, 3);
+        emulate_gather_byte(low_xmm, mem_base, offset_aux, 3);
 
-        uni_vmovdqu(vmm_index, ptr[reg_index + ymm_size * 2]);
+        vmovdqu(vmm_index, ptr[reg_index + ymm_size * 2]);
+        vextracti128(offset_aux, vmm_index, 1);
+        vzeroupper();
         emulate_gather_byte(xmm_aux, mem_base, low_offset, 0);
-        vextracti128(low_offset, vmm_index, 1);
-        emulate_gather_byte(xmm_aux, mem_base, low_offset, 1);
+        emulate_gather_byte(xmm_aux, mem_base, offset_aux, 1);
 
-        uni_vmovdqu(vmm_index, ptr[reg_index + ymm_size * 3]);
+        vmovdqu(vmm_index, ptr[reg_index + ymm_size * 3]);
+        vextracti128(offset_aux, vmm_index, 1);
+        vzeroupper();
         emulate_gather_byte(xmm_aux, mem_base, low_offset, 2);
-        vextracti128(low_offset, vmm_index, 1);
-        emulate_gather_byte(xmm_aux, mem_base, low_offset, 3);
+        emulate_gather_byte(xmm_aux, mem_base, offset_aux, 3);
 
         vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
     }
