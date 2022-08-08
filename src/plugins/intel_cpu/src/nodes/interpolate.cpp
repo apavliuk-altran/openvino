@@ -46,10 +46,10 @@ namespace intel_cpu {
 namespace node {
 
 template <cpu_isa_t isa>
-struct jit_uni_interpolate_kernel_f32 : public jit_uni_interpolate_kernel, public jit_generator {
-    DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_interpolate_kernel_f32)
+struct jit_uni_interpolate_kernel_f32_i8 : public jit_uni_interpolate_kernel, public jit_generator {
+    DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_interpolate_kernel_f32_i8)
 
-    explicit jit_uni_interpolate_kernel_f32(jit_interpolate_config_params jcp, const dnnl_primitive_attr &attr)
+    explicit jit_uni_interpolate_kernel_f32_i8(jit_interpolate_config_params jcp, const dnnl_primitive_attr &attr)
     : jit_uni_interpolate_kernel(jcp, attr), jit_generator() {}
 
     void create_ker() override {
@@ -207,6 +207,9 @@ private:
     Vmm vmm_d_weights = Vmm(4);
     Vmm vmm_d_bias = Vmm(5);
 
+    // for planar
+    Vmm vmm_val_aux = Vmm(15);
+
     // for linear
     Vmm vmm_weightT = Vmm(15);
     Vmm vmm_weightB = Vmm(14);
@@ -262,8 +265,9 @@ private:
         }
     }
 
-    inline void load(Xbyak::Reg64 reg_src, Vmm vmm_src, const int elt_num, const int offset = 0) {
-        emit_load(reg_src, vmm_src, jcp_.src_prc, Precision::FP32, elt_num, offset);
+    inline void load(Xbyak::Reg64 reg_src, Vmm vmm_src, const int elt_num, const int offset = 0,
+                     const InferenceEngine::Precision& dst_prc = Precision::FP32) {
+        emit_load(reg_src, vmm_src, jcp_.src_prc, dst_prc, elt_num, offset);
     }
 
     inline void load_weights(Xbyak::Reg64 reg_src, Vmm vmm_src, const int elt_num, const int offset = 0) {
@@ -280,10 +284,11 @@ private:
                                   {static_cast<size_t>(vmm_src.getIdx())}, {}, {load_pool_gpr_idxs});
     }
 
-    inline void store(Vmm vmm_dst, Xbyak::Reg64 reg_dst, const int elt_num, const int offset = 0) {
-        const auto seed = store_emitter_params(Precision::FP32, jcp_.dst_prc, elt_num).hash();
+    inline void store(Vmm vmm_dst, Xbyak::Reg64 reg_dst, const int elt_num, const int offset = 0,
+                      const InferenceEngine::Precision& src_prc = Precision::FP32) {
+        const auto seed = store_emitter_params(src_prc, jcp_.dst_prc, elt_num).hash();
         if (!emitters[seed]) {
-            emitters[seed].reset(new jit_store_emitter(this, isa, Precision::FP32, jcp_.dst_prc, elt_num));
+            emitters[seed].reset(new jit_store_emitter(this, isa, src_prc, jcp_.dst_prc, elt_num));
         }
 
         // for cases when Store emitter need 2 aux vmm we can use vmm_dst as second aux vmm
@@ -295,7 +300,107 @@ private:
                                   {local_store_pool_vec_idxs}, {store_pool_gpr_idxs});
     }
 
+    /**
+     * @brief Auxilary worker function for emulate_gather_byte()
+     *
+     * @param xmm_arg Destination vector register
+     * @param mem_base Register with the base address
+     * @param xmm_index Vector register with indices
+     * @param mem_aux Auxilary 64-bit register
+     * @param byte_offset Offset of the current byte [0..3]
+     * @return none.
+     */
+    inline void emulate_gather_byte_impl(const Xbyak::Xmm &xmm_arg, const Xbyak::Reg64 &mem_base, const Xmm &xmm_index,
+                                         const Xbyak::Reg64 &mem_aux, int byte_offset) {
+        constexpr int xmm_len = cpu_isa_traits<sse41>::vlen;
+        const size_t src_prc_size = jcp_.src_prc.size();
+        if (src_prc_size != 1) {
+            IE_THROW() << "The data type of size '" << src_prc_size << "' is not supported.";
+        }
+        constexpr int ind_block_size = xmm_len / sizeof(int32_t);
+        for (int i = 0; i < ind_block_size; ++i) {
+            vpextrd(Xbyak::Reg32(mem_aux.getIdx()), xmm_index, i);
+            add(mem_aux, mem_base);
+            vpinsrb(xmm_arg, xmm_arg, ptr[mem_aux], i + byte_offset * ind_block_size);
+        }
+    }
+
+    /**
+     * @brief Emulates vgatherdpd/vgatherdps instruction for byte-sized data with 32-bit indices.
+     * Mask is considered with all bits set.
+     * SSE4.1 version
+     *
+     * @param xmm_arg Destination vector register
+     * @param mem_base Register with the base address
+     * @param reg_index Register with the base index address
+     * @param mem_aux Auxilary 64-bit register
+     * @param mem_offset Memory offset for the index register
+     * @return none.
+     */ 
+    inline void emulate_gather_byte(const Xbyak::Xmm &xmm_arg, const Xbyak::Reg64 &mem_base,
+                                    const Xbyak::Reg64 &reg_index, const Xbyak::Xmm &xmm_aux,
+                                    const Xbyak::Reg64 &mem_aux, int mem_offset = 0) {
+        MAYBE_UNUSED(xmm_aux);
+        constexpr int i32_i8_ratio = sizeof(int32_t) / sizeof(int8_t);
+        constexpr int xmm_len = cpu_isa_traits<sse41>::vlen;
+        Xbyak::Xmm xmm_index = Xbyak::Xmm(vmm_index.getIdx());
+        for (int i = 0; i < i32_i8_ratio; ++i) {
+            uni_vmovdqu(xmm_index, ptr[reg_index + mem_offset + i * xmm_len]);
+            emulate_gather_byte_impl(xmm_arg, mem_base, xmm_index, mem_aux, i);
+        }
+    }
+
+    /**
+     * @brief Emulates vgatherdpd/vgatherdps instruction for byte-sized data with 32-bit indices.
+     * Mask is considered with all bits set.
+     * AVX2 version
+     *
+     * @param ymm_arg Destination vector register
+     * @param mem_base Register with the base address
+     * @param reg_index Register with the base index address
+     * @param ymm_aux Auxilary vector register
+     * @param mem_aux Auxilary 64-bit register
+     * @return none.
+     */
+    inline void emulate_gather_byte(const Xbyak::Ymm &ymm_arg, const Xbyak::Reg64 &mem_base,
+                                    const Xbyak::Reg64 &reg_index, const Xbyak::Ymm &ymm_aux, const Xbyak::Reg64 &mem_aux) {
+        constexpr int i32_i8_ratio = sizeof(int32_t) / sizeof(int8_t);
+        constexpr int xmm_len = cpu_isa_traits<sse41>::vlen;
+        Xbyak::Xmm xmm_arg = Xbyak::Xmm(ymm_arg.getIdx());
+        Xbyak::Xmm xmm_aux = Xbyak::Xmm(ymm_aux.getIdx());
+        emulate_gather_byte(xmm_arg, mem_base, reg_index, xmm_aux, mem_aux, 0);
+        emulate_gather_byte(xmm_aux, mem_base, reg_index, xmm_aux, mem_aux, i32_i8_ratio * xmm_len);
+        vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
+    }
+
+    /**
+     * @brief Emulates vgatherdpd/vgatherdps instruction for byte-sized data with 32-bit indices.
+     * Mask is considered with all bits set.
+     * AVX512 version
+     *
+     * @param zmm_arg Destination vector register
+     * @param mem_base Register with the base address
+     * @param reg_index Register with the base index address
+     * @param zmm_aux Auxilary vector register
+     * @param mem_aux Auxilary 64-bit register
+     * @return none.
+     */
+    inline void emulate_gather_byte(const Xbyak::Zmm &zmm_arg, const Xbyak::Reg64 &mem_base,
+                                    const Xbyak::Reg64 &reg_index, const Xbyak::Zmm &zmm_aux, const Xbyak::Reg64 &mem_aux) {
+        constexpr int i32_i8_ratio = sizeof(int32_t) / sizeof(int8_t);
+        constexpr int xmm_len = cpu_isa_traits<sse41>::vlen;
+        constexpr int zmm_xmm_ratio = cpu_isa_traits<avx512_core>::vlen / xmm_len;
+        Xbyak::Xmm xmm_aux = Xbyak::Xmm(zmm_aux.getIdx());
+        for (int i = 0; i < zmm_xmm_ratio; ++i) {
+            emulate_gather_byte(xmm_aux, mem_base, reg_index, xmm_aux, mem_aux, i * i32_i8_ratio * xmm_len);
+            vinserti64x2(zmm_arg, zmm_arg, xmm_aux, i);
+        }
+    }
+
     void nn_planar() {
+        const bool is_i8 = jcp_.src_prc == InferenceEngine::Precision::I8
+                           && jcp_.dst_prc == InferenceEngine::Precision::I8;
+
         Xbyak::Reg64 reg_index_h = reg_src_aux1;
         Xbyak::Reg64 reg_index_w = reg_src_aux2;
         mov(reg_index_h, reg_index);
@@ -309,6 +414,7 @@ private:
 
         Xbyak::Reg64 reg_work_amount_oh = rdi;
         mov(reg_work_amount_oh, jcp_.OH);
+
         L(out_loop_label);
         {
             // outloop status
@@ -327,6 +433,8 @@ private:
             // reset index_w, index_w * dataSize done when built to avoid redundent compute
             mov(reg_index, reg_index_w);
 
+            int step = vlen / (is_i8 ? sizeof(int8_t) : sizeof(float));
+
             Xbyak::Label nn_loop_label;
             Xbyak::Label nn_loop_end_label;
             Xbyak::Label nn_tail_loop_label;
@@ -334,19 +442,26 @@ private:
 
             L(nn_loop_label);   // inner loop
             {
-                cmp(reg_work_amount, vector_step);
+                cmp(reg_work_amount, step);
                 jl(nn_loop_end_label, T_NEAR);
+                if (is_i8) {
+                    emulate_gather_byte(vmm_val, reg_src_h, reg_index, vmm_val_aux, reg_tmp_64);
+                    if (attr_.post_ops_.len() != 0) {
+                        IE_THROW() << "Interpolate I8 doesn't support fusing";
+                    }
+                    store(vmm_val, reg_dst, step, 0, Precision::I8);
+                } else {
+                    uni_vmovdqu(vmm_index, ptr[reg_index]);
+                    uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+                    vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
+                    if (attr_.post_ops_.len() != 0)
+                        apply_post_ops(jcp_.dst_prc, 1);
+                    store(vmm_val, reg_dst, step);
+                }
 
-                uni_vmovdqu(vmm_index, ptr[reg_index]);
-                uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-                vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
-                if (attr_.post_ops_.len() != 0)
-                    apply_post_ops(jcp_.dst_prc, 1);
-                store(vmm_val, reg_dst, vector_step);
-
-                add(reg_dst, vector_step * jcp_.dst_data_size);
-                add(reg_index, vector_step * jcp_.indices_size);
-                sub(reg_work_amount, vector_step);
+                add(reg_dst, step * jcp_.dst_data_size);
+                add(reg_index, step * jcp_.indices_size);
+                sub(reg_work_amount, step);
 
                 jmp(nn_loop_label, T_NEAR);
             }
@@ -361,11 +476,18 @@ private:
                 mov(reg_index_offset, dword[reg_index]);
                 add(reg_src_aux, reg_index_offset);
 
-                load(reg_src_aux, vmm_val, scalar_step);
-                if (attr_.post_ops_.len() != 0)
-                    apply_post_ops(jcp_.dst_prc, 1);
-                store(vmm_val, reg_dst, scalar_step);
-
+                if (is_i8) {
+                    load(reg_src_aux, vmm_val, scalar_step, 0, Precision::I8);
+                    if (attr_.post_ops_.len() != 0) {
+                        IE_THROW() << "Interpolate I8 doesn't support fusing";
+                    }
+                    store(vmm_val, reg_dst, scalar_step, 0, Precision::I8);
+                } else {
+                    load(reg_src_aux, vmm_val, scalar_step);
+                    if (attr_.post_ops_.len() != 0)
+                        apply_post_ops(jcp_.dst_prc, 1);
+                    store(vmm_val, reg_dst, scalar_step);
+                }
                 add(reg_dst, scalar_step * jcp_.dst_data_size);
                 add(reg_index, scalar_step * jcp_.indices_size);
                 sub(reg_work_amount, scalar_step);
@@ -1771,9 +1893,14 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
                     pushDesc(LayoutType::nCsp8c, jit_sse42);
             }
         }
-
+        const auto &dataMaxDims = getInputShapeAtPort(DATA_ID).getMaxDims();
         // planar for 1.ref on machine without sse41(if no sse41, canFuse() is false). 2.JIT kernel for f32 && avx2(gather).(with fuse)
-        if (mayiuse(cpu::x64::avx2) && inputPrecision == Precision::FP32) {
+        const bool allowAvx2NcspFp32 = mayiuse(cpu::x64::avx2) && inputPrecision == Precision::FP32;
+        // allow I8 planar format only for avx2 with channels = 1, fusing is not supported
+        const bool allowAvx2NcspI8 = mayiuse(cpu::x64::avx2) && !mayiuse(cpu::x64::avx512_core) &&
+            inputPrecision == Precision::I8 && outputPrecision == Precision::I8 &&
+            dataMaxDims[1] == 1 && fusedWith.empty();
+        if (allowAvx2NcspFp32 || allowAvx2NcspI8) {
             pushDesc(LayoutType::ncsp, jit_avx2);
         }
     }
@@ -1875,10 +2002,15 @@ void Interpolate::prepareParams() {
 
     auto buildExecutor = [&](const InterpolateKey& key) -> std::shared_ptr<InterpolateExecutor> {
         std::shared_ptr<InterpolateExecutor> executor;
+        const bool isPlanar = key.nodeAttrs.layout == InterpolateLayoutType::planar;
+        // allow I8 planar format only for avx2 with channels = 1, fusing is not supported
+        const bool allowNearestPlanarI8 = isPlanar && mayiuse(cpu::x64::avx2) && !mayiuse(cpu::x64::avx512_core) &&
+            key.nodeAttrs.inPrc == Precision::I8 && key.nodeAttrs.outPrc == Precision::I8 &&
+            key.srcDims[1] == 1 && key.attr.get_post_ops().len() == 0;
         if ((key.nodeAttrs.mode == InterpolateMode::nearest || key.nodeAttrs.mode == InterpolateMode::linear_onnx ||
             key.nodeAttrs.mode == InterpolateMode::cubic) &&
-            ((key.nodeAttrs.layout != InterpolateLayoutType::planar && mayiuse(cpu::x64::sse41)) ||
-                (mayiuse(cpu::x64::avx2) && key.nodeAttrs.inPrc == Precision::FP32))) {
+            ((!isPlanar && mayiuse(cpu::x64::sse41)) ||
+            (mayiuse(cpu::x64::avx2) && key.nodeAttrs.inPrc == Precision::FP32) || allowNearestPlanarI8)) {
             executor = std::make_shared<InterpolateJitExecutor>(key.nodeAttrs,
                                                                key.srcDims,
                                                                key.dstDims,
@@ -3118,17 +3250,22 @@ Interpolate::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAtt
     jcp.ID = srcDimPad5d[2];
     jcp.spatial_dim_size = getSpatialDimsNum(srcDims.size());
     jcp.layout = interpAttrs.layout;
+
+    const bool allowFp32 = interpAttrs.inPrc == InferenceEngine::Precision::FP32;
+    // allow I8 planar format only for avx2 with channels = 1, fusing is not supported
+    const bool allowI8 = interpAttrs.inPrc == InferenceEngine::Precision::I8 &&
+        interpAttrs.outPrc == InferenceEngine::Precision::I8 && srcDimPad5d[1] == 1 &&
+        attr.get_post_ops().len() == 0;
     if (jcp.layout != InterpolateLayoutType::planar) {
         if (mayiuse(cpu::x64::avx512_core)) {
-            interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::avx512_core>(jcp, *attr.get()));
+            interpolateKernel.reset(new jit_uni_interpolate_kernel_f32_i8<cpu::x64::avx512_core>(jcp, *attr.get()));
         } else if (mayiuse(cpu::x64::avx2)) {
-            interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::avx2>(jcp, *attr.get()));
+            interpolateKernel.reset(new jit_uni_interpolate_kernel_f32_i8<cpu::x64::avx2>(jcp, *attr.get()));
         } else if (mayiuse(cpu::x64::sse41)) {
-            interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::sse41>(jcp, *attr.get()));
+            interpolateKernel.reset(new jit_uni_interpolate_kernel_f32_i8<cpu::x64::sse41>(jcp, *attr.get()));
         }
-    } else if (mayiuse(cpu::x64::avx2) && interpAttrs.inPrc == InferenceEngine::Precision::FP32) {
-        // gather ISA(for planar JIT kernel) for avx2 and fp32
-        interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::avx2>(jcp, *attr.get()));
+    } else if (mayiuse(cpu::x64::avx2) && (allowFp32 || allowI8)) {
+        interpolateKernel.reset(new jit_uni_interpolate_kernel_f32_i8<cpu::x64::avx2>(jcp, *attr.get()));
     } else {
         IE_THROW() << "Can't create InterpolateJitExecutor";
     }
