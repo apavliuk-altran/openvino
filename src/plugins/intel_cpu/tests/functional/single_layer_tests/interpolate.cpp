@@ -271,17 +271,26 @@ TEST_P(InterpolateLayerCPUTest, CompareWithRefs) {
 namespace {
 
 /* CPU PARAMS */
-std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
+std::vector<CPUSpecificParams> filterCPUInfoForDevice(bool allowBlocked = true) {
     std::vector<CPUSpecificParams> resCPUParams;
     if (InferenceEngine::with_cpu_x86_avx512f()) {
-        resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
+        // blocked layout is disabled for channels == 1
+        if (allowBlocked) {
+            resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
+        }
         resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx512"}, "jit_avx512"});
     } else if (InferenceEngine::with_cpu_x86_avx2()) {
-        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
+        // blocked layout is disabled for channels == 1
+        if (allowBlocked) {
+            resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
+        }
         resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
         resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
     } else if (InferenceEngine::with_cpu_x86_sse42()) {
-        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
+        // blocked layout is disabled for channels == 1
+        if (allowBlocked) {
+            resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
+        }
         resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
     } else {
         resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"ref"}, "ref"});
@@ -593,6 +602,92 @@ INSTANTIATE_TEST_SUITE_P(InterpolateCubic_Layout_Test, InterpolateLayerCPUTest,
             ::testing::ValuesIn(interpolateFusingParamsSet),
             ::testing::ValuesIn(filterAdditionalConfig())),
     InterpolateLayerCPUTest::getTestCaseName);
+
+/* FP32 and I8 Interpolate tests for shapes with channels == 1 */
+const std::vector<ShapeParams> shapeParams4D_Smoke_1C = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,
+        InputShape{{1, 1, 80, 200}, {{1, 1, 80, 200}}},
+        ngraph::helpers::InputLayerType::PARAMETER,
+        {{1, 1, 80, 1000}},
+        defaultAxes4D.front()
+    }
+};
+
+const std::vector<ShapeParams> shapeParams4D_Full_1C = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,
+        InputShape{{1, 1, 80, 1000}, {{1, 1, 80, 1000}}},
+        ngraph::helpers::InputLayerType::PARAMETER,
+        {{1, 1, 80, 5000}},
+        defaultAxes4D.front()
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,
+        InputShape{{1, 1, 80, 5000}, {{1, 1, 80, 5000}}},
+        ngraph::helpers::InputLayerType::PARAMETER,
+        {{1, 1, 80, 55000}},
+        defaultAxes4D.front()
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,
+        InputShape{{1, 1, 128, 196}, {{1, 1, 128, 196}}},
+        ngraph::helpers::InputLayerType::PARAMETER,
+        {{1, 1, 128, 53900}},
+        defaultAxes4D.front()
+    }
+};
+
+const std::vector<ngraph::op::v4::Interpolate::CoordinateTransformMode> coordinateTransformModes_Smoke_1C = {
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::HALF_PIXEL,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::ASYMMETRIC
+};
+
+const std::vector<ngraph::op::v4::Interpolate::CoordinateTransformMode> coordinateTransformModes_Full_1C = {
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::TF_HALF_PIXEL_FOR_NN,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::PYTORCH_HALF_PIXEL,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::HALF_PIXEL,
+        ngraph::op::v4::Interpolate::CoordinateTransformMode::ASYMMETRIC
+};
+
+const auto interpolateCasesNN_Smoke_1C = ::testing::Combine(
+        ::testing::Values(ngraph::op::v4::Interpolate::InterpolateMode::nearest),
+        ::testing::ValuesIn(coordinateTransformModes_Smoke_1C),
+        ::testing::ValuesIn(nearestModes_Smoke),
+        ::testing::ValuesIn(antialias),
+        ::testing::ValuesIn(pads4D),
+        ::testing::ValuesIn(pads4D),
+        ::testing::ValuesIn(cubeCoefs));
+
+const auto interpolateCasesNN_Full_1C = ::testing::Combine(
+        ::testing::Values(ngraph::op::v4::Interpolate::InterpolateMode::nearest),
+        ::testing::ValuesIn(coordinateTransformModes_Full_1C),
+        ::testing::ValuesIn(nearestModes_Full),
+        ::testing::ValuesIn(antialias),
+        ::testing::ValuesIn(pads4D),
+        ::testing::ValuesIn(pads4D),
+        ::testing::ValuesIn(cubeCoefs));
+
+INSTANTIATE_TEST_SUITE_P(smoke_InterpolateNN_Layout_1C_Test, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesNN_Smoke_1C,
+            ::testing::ValuesIn(shapeParams4D_Smoke_1C),
+            ::testing::ValuesIn({ElementType::f32, ElementType::i8}),
+            ::testing::ValuesIn(filterCPUInfoForDevice(false)),
+            ::testing::Values(emptyFusingSpec),
+            ::testing::ValuesIn(filterAdditionalConfig())),
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(InterpolateNN_Layout_1C_Test, InterpolateLayerCPUTest,
+         ::testing::Combine(
+            interpolateCasesNN_Full_1C,
+            ::testing::ValuesIn(shapeParams4D_Full_1C),
+            ::testing::ValuesIn({ElementType::f32, ElementType::i8}),
+            ::testing::ValuesIn(filterCPUInfoForDevice(false)),
+            ::testing::Values(emptyFusingSpec),
+            ::testing::ValuesIn(filterAdditionalConfig())),
+     InterpolateLayerCPUTest::getTestCaseName);
+
 
 ////////////////////////5D/////////////////////////////
 std::vector<CPUSpecificParams> filterCPUInfoForDevice5D() {
