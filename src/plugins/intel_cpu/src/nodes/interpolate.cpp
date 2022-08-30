@@ -297,6 +297,103 @@ private:
                                   {local_store_pool_vec_idxs}, {store_pool_gpr_idxs});
     }
 
+    // /**
+    //  * @brief Auxilary worker function for emulate_gather_byte()
+    //  *
+    //  * @param xmm_arg Destination vector register
+    //  * @param mem_base Register with the base address
+    //  * @param xmm_index Vector register with indices
+    //  * @param mem_aux Auxilary 64-bit register
+    //  * @param byte_offset Offset of the current byte [0..3]
+    //  * @return none.
+    //  */
+    // inline void emulate_gather_byte_impl(const Xbyak::Xmm &xmm_arg, const Xbyak::Reg64 &mem_base, const Xmm &xmm_index,
+    //                                      const Xbyak::Reg64 &mem_aux, int byte_offset) {
+    //     constexpr int xmm_len = cpu_isa_traits<sse41>::vlen;
+    //     const size_t src_prc_size = jcp_.src_prc.size();
+    //     if (src_prc_size != 1) {
+    //         IE_THROW() << "The data type of size '" << src_prc_size << "' is not supported.";
+    //     }
+    //     constexpr int ind_block_size = xmm_len / sizeof(int32_t);
+    //     for (int i = 0; i < ind_block_size; ++i) {
+    //         vpextrd(Xbyak::Reg32(mem_aux.getIdx()), xmm_index, i);
+    //         add(mem_aux, mem_base);
+    //         vpinsrb(xmm_arg, xmm_arg, ptr[mem_aux], i + byte_offset * ind_block_size);
+    //     }
+    // }
+
+    // /**
+    //  * @brief Emulates vgatherdpd/vgatherdps instruction for byte-sized data with 32-bit indices.
+    //  * Mask is considered with all bits set.
+    //  * SSE4.1 version
+    //  *
+    //  * @param xmm_arg Destination vector register
+    //  * @param mem_base Register with the base address
+    //  * @param reg_index Register with the base index address
+    //  * @param mem_aux Auxilary 64-bit register
+    //  * @param mem_offset Memory offset for the index register
+    //  * @return none.
+    //  */
+    // inline void emulate_gather_byte(const Xbyak::Xmm &xmm_arg, const Xbyak::Reg64 &mem_base,
+    //                                 const Xbyak::Reg64 &reg_index, const Xbyak::Xmm &xmm_aux,
+    //                                 const Xbyak::Reg64 &mem_aux, int mem_offset = 0) {
+    //     MAYBE_UNUSED(xmm_aux);
+    //     constexpr int i32_i8_ratio = sizeof(int32_t) / sizeof(int8_t);
+    //     constexpr int xmm_len = cpu_isa_traits<sse41>::vlen;
+    //     Xbyak::Xmm xmm_index = Xbyak::Xmm(vmm_index.getIdx());
+    //     for (int i = 0; i < i32_i8_ratio; ++i) {
+    //         uni_vmovdqu(xmm_index, ptr[reg_index + mem_offset + i * xmm_len]);
+    //         emulate_gather_byte_impl(xmm_arg, mem_base, xmm_index, mem_aux, i);
+    //     }
+    // }
+
+    // /**
+    //  * @brief Emulates vgatherdpd/vgatherdps instruction for byte-sized data with 32-bit indices.
+    //  * Mask is considered with all bits set.
+    //  * AVX2 version
+    //  *
+    //  * @param ymm_arg Destination vector register
+    //  * @param mem_base Register with the base address
+    //  * @param reg_index Register with the base index address
+    //  * @param ymm_aux Auxilary vector register
+    //  * @param mem_aux Auxilary 64-bit register
+    //  * @return none.
+    //  */
+    // inline void emulate_gather_byte(const Xbyak::Ymm &ymm_arg, const Xbyak::Reg64 &mem_base,
+    //                                 const Xbyak::Reg64 &reg_index, const Xbyak::Ymm &ymm_aux, const Xbyak::Reg64 &mem_aux) {
+    //     constexpr int i32_i8_ratio = sizeof(int32_t) / sizeof(int8_t);
+    //     constexpr int xmm_len = cpu_isa_traits<sse41>::vlen;
+    //     Xbyak::Xmm xmm_arg = Xbyak::Xmm(ymm_arg.getIdx());
+    //     Xbyak::Xmm xmm_aux = Xbyak::Xmm(ymm_aux.getIdx());
+    //     emulate_gather_byte(xmm_arg, mem_base, reg_index, xmm_aux, mem_aux, 0);
+    //     emulate_gather_byte(xmm_aux, mem_base, reg_index, xmm_aux, mem_aux, i32_i8_ratio * xmm_len);
+    //     vinserti128(ymm_arg, ymm_arg, xmm_aux, 1);
+    // }
+
+    // /**
+    //  * @brief Emulates vgatherdpd/vgatherdps instruction for byte-sized data with 32-bit indices.
+    //  * Mask is considered with all bits set.
+    //  * AVX512 version
+    //  *
+    //  * @param zmm_arg Destination vector register
+    //  * @param mem_base Register with the base address
+    //  * @param reg_index Register with the base index address
+    //  * @param zmm_aux Auxilary vector register
+    //  * @param mem_aux Auxilary 64-bit register
+    //  * @return none.
+    //  */
+    // inline void emulate_gather_byte(const Xbyak::Zmm &zmm_arg, const Xbyak::Reg64 &mem_base,
+    //                                 const Xbyak::Reg64 &reg_index, const Xbyak::Zmm &zmm_aux, const Xbyak::Reg64 &mem_aux) {
+    //     constexpr int i32_i8_ratio = sizeof(int32_t) / sizeof(int8_t);
+    //     constexpr int xmm_len = cpu_isa_traits<sse41>::vlen;
+    //     constexpr int zmm_xmm_ratio = cpu_isa_traits<avx512_core>::vlen / xmm_len;
+    //     Xbyak::Xmm xmm_aux = Xbyak::Xmm(zmm_aux.getIdx());
+    //     for (int i = 0; i < zmm_xmm_ratio; ++i) {
+    //         emulate_gather_byte(xmm_aux, mem_base, reg_index, xmm_aux, mem_aux, i * i32_i8_ratio * xmm_len);
+    //         vinserti64x2(zmm_arg, zmm_arg, xmm_aux, i);
+    //     }
+    // }
+
     void nn_planar() {
         const bool is_i8 = jcp_.src_prc == InferenceEngine::Precision::I8
                            && jcp_.dst_prc == InferenceEngine::Precision::I8;
