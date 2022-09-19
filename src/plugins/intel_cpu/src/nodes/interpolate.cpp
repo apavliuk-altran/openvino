@@ -1691,6 +1691,13 @@ Interpolate::Interpolate(const std::shared_ptr<ngraph::Node>& op, const dnnl::en
                 axes[i] = i;
             }
         }
+
+        const auto rtInfo = interp->get_rt_info();
+        const auto it = rtInfo.find("enforceAllSupportedLayouts");
+        if (it != rtInfo.end()) {
+            enforceAllSupportedLayouts = it->second.as<bool>();
+        }
+
     } else {
         IE_THROW(NotImplemented) << errorMessage;
     }
@@ -1788,7 +1795,12 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
     };
 
     const auto &dataMinDims = getInputShapeAtPort(DATA_ID).getMinDims();
-    bool isBlkApplied = getInputShapeAtPort(DATA_ID).getRank() > 1 && dataMinDims[1] != Shape::UNDEFINED_DIM && dataMinDims[1] > 1;
+    bool isBlkApplied;
+    if (enforceAllSupportedLayouts) {
+        isBlkApplied = true;
+    } else {
+        isBlkApplied = getInputShapeAtPort(DATA_ID).getRank() > 1 && dataMinDims[1] != Shape::UNDEFINED_DIM && dataMinDims[1] > 1;
+    }
 
     impl_desc_type implType;
     if (mayiuse(cpu::x64::avx512_core)) {
