@@ -1087,22 +1087,28 @@ std::vector<std::map<std::string, std::string>> filterAdditionalConfigBenchmark(
 
 std::vector<CPUSpecificParams> filterCPUInfoForDeviceTestI8() {
     std::vector<CPUSpecificParams> resCPUParams;
+
+    resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
+    resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx512"}, "jit_avx512"});
+    resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx512"}, "jit_avx512"});
+
     // resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
     // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
     // resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
-    resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
-    resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
-    resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_sse42"}, "jit_sse42"});
+
+    // resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
+    // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
+    // resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_sse42"}, "jit_sse42"});
     return resCPUParams;
 }
 
 #pragma GCC diagnostic pop
 
-// const std::vector<ElementType> prcBenchmark = {ElementType::f32, ElementType::i8};
+const std::vector<ElementType> prcBenchmark = {ElementType::f32, ElementType::i8};
 // const std::vector<ElementType> prcBenchmark = {ElementType::f32, ElementType::i8, ElementType::u8};
 // const std::vector<ElementType> prcBenchmark = {ElementType::f32};
 // const std::vector<ElementType> prcBenchmark = {ElementType::i8, ElementType::u8};
-const std::vector<ElementType> prcBenchmark = {ElementType::i8};
+// const std::vector<ElementType> prcBenchmark = {ElementType::i8};
 // const std::vector<ElementType> prcBenchmark = {ElementType::u8};
 
 const auto interpolateCasesBenchmark = ::testing::Combine(
@@ -2568,6 +2574,253 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_10, InterpolateLayerCPUB
             ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
     InterpolateLayerCPUBenchmarkTest::getTestCaseName);
 
+
+const std::vector<ShapeParams> shapeParamsBenchmark_11 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 1}, {{1, 2, 16, 1}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 1}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 2}, {{1, 2, 16, 2}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 2}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 3}, {{1, 2, 16, 3}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 3}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 4}, {{1, 2, 16, 4}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 4}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 5}, {{1, 2, 16, 5}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 5}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 8}, {{1, 2, 16, 8}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 8}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 10}, {{1, 2, 16, 10}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 10}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 16}, {{1, 2, 16, 16}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 16}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 21}, {{1, 2, 16, 21}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 21}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 32}, {{1, 2, 16, 32}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 32}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 40}, {{1, 2, 16, 40}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 40}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 64}, {{1, 2, 16, 64}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 64}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 111}, {{1, 2, 16, 111}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 111}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 128}, {{1, 2, 16, 128}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 128}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 192}, {{1, 2, 16, 192}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 192}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 2, 16, 199}, {{1, 2, 16, 199}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 2, 16, 199}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 1}, {{1, 3, 16, 1}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 1}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 2}, {{1, 3, 16, 2}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 2}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 3}, {{1, 3, 16, 3}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 3}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 4}, {{1, 3, 16, 4}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 4}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 5}, {{1, 3, 16, 5}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 5}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 8}, {{1, 3, 16, 8}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 8}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 10}, {{1, 3, 16, 10}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 10}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 16}, {{1, 3, 16, 16}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 16}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 21}, {{1, 3, 16, 21}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 21}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 32}, {{1, 3, 16, 32}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 32}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 40}, {{1, 3, 16, 40}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 40}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 64}, {{1, 3, 16, 64}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 64}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 111}, {{1, 3, 16, 111}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 111}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 128}, {{1, 3, 16, 128}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 128}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 192}, {{1, 3, 16, 192}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 192}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,             // ShapeCalculationMode
+        InputShape{{1, 3, 16, 199}, {{1, 3, 16, 199}}},              // Input shapes
+        ngraph::helpers::InputLayerType::CONSTANT,                    // input type
+        {{1, 3, 16, 199}},                                            // scales or sizes values
+        defaultAxesBenchmark.front()                                   // axes
+    },
+};
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_11, InterpolateLayerCPUTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_11),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(Interpolate_Benchmark_CPU_Test_11, InterpolateLayerCPUBenchmarkTest,
+        ::testing::Combine(
+            interpolateCasesBenchmark,                                     // InterpolateSpecificParams
+            ::testing::ValuesIn(shapeParamsBenchmark_11),               // ShapeParams
+            ::testing::ValuesIn(prcBenchmark),     // ElementType
+            ::testing::ValuesIn(filterCPUInfoForDeviceTestI8()),              // CPUSpecificParams
+            ::testing::ValuesIn(interpolateFusingParamsBenchmark),      // fusingSpecificParams
+            ::testing::ValuesIn(filterAdditionalConfigBenchmark())),             // AdditionalConfig
+    InterpolateLayerCPUBenchmarkTest::getTestCaseName);
 
 }  // namespace benchmark
 
