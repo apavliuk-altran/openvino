@@ -287,10 +287,10 @@ std::vector<CPUSpecificParams> filterCPUInfoForDevice(bool forcePlanarForAvx512 
         if (forcePlanarForAvx512) {
             resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx512"}, "jit_avx512"});
         }
-    } else if (InferenceEngine::with_cpu_x86_avx2()) {
-        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
-        resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
-        resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
+    // } else if (InferenceEngine::with_cpu_x86_avx2()) {
+    //     resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
+    //     resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
+    //     resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
     } else if (InferenceEngine::with_cpu_x86_sse42()) {
         resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
         resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
@@ -679,8 +679,10 @@ INSTANTIATE_TEST_SUITE_P(smoke_InterpolateNearestExt_FP32_Layout_Test, Interpola
             interpolateCasesNearestExt_Smoke,
             ::testing::ValuesIn(shapeParams4D_NearestExt_Smoke),
             ::testing::Values(ElementType::f32),
-            ::testing::ValuesIn(filterCPUInfoForDevice(true, false)),
-            ::testing::ValuesIn(interpolateFusingParamsSet),
+            // ::testing::ValuesIn(filterCPUInfoForDevice(true, false)),
+            ::testing::ValuesIn(filterCPUInfoForDevice(true, true)),
+            // ::testing::ValuesIn(interpolateFusingParamsSet),
+            ::testing::Values(emptyFusingSpec),
             ::testing::ValuesIn(filterAdditionalConfig(false))),
     InterpolateLayerCPUTest::getTestCaseName);
 
