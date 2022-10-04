@@ -66,7 +66,7 @@ void CpuTestWithFusing::CheckFusingResults(const std::shared_ptr<const ov::Model
 
 void CpuTestWithFusing::CheckPluginRelatedResultsImpl(const std::shared_ptr<const ov::Model>& function, const std::string& nodeType) const {
     CPUTestsBase::CheckPluginRelatedResultsImpl(function, nodeType);
-    CheckFusingResults(function, nodeType);
+    // CheckFusingResults(function, nodeType);
 }
 
 std::shared_ptr<ngraph::Node>

@@ -1451,6 +1451,13 @@ void GraphOptimizer::FuseInterpolateAndSimpleOperation(Graph &graph) {
         return interpolateNode->canFuse(childNode);
     };
 
+    // std::cout << "~~~~~~~~~~~~~~~~~~~~~Before~~~~~~~~~~~~~~~~~~~~~\n";
+    // // for (const auto& node : graph.GetNodes()) {
+    //     // std::cout << "~~~~~~~~~~~~~~~~~~~~~name: " << node->getName() << " typeStr: " << node->getTypeStr() << '\n';
+    // for (const auto& edge : graph.GetEdges()) {
+    //     std::cout << "~~~~~~~~~~~~~~~~~~~~~name: " << edge->name() << '\n';
+    // }
+
     auto parent = graphNodes.begin();
     while (parent != graphNodes.end()) {
         auto parentNode = *parent;
@@ -1480,6 +1487,13 @@ void GraphOptimizer::FuseInterpolateAndSimpleOperation(Graph &graph) {
 
         graph.DropNode(childNode);
     }
+
+    // std::cout << "~~~~~~~~~~~~~~~~~~~~~After~~~~~~~~~~~~~~~~~~~~~\n";
+    // // for (const auto& node : graph.GetNodes()) {
+    //     // std::cout << "~~~~~~~~~~~~~~~~~~~~~name: " << node->getName() << " typeStr: " << node->getTypeStr() << '\n';
+    // for (const auto& edge : graph.GetEdges()) {
+    //     std::cout << "~~~~~~~~~~~~~~~~~~~~~name: " << edge->name() << '\n';
+    // }
 }
 
 void GraphOptimizer::FuseNormalizeL2AndSimpleOperation(Graph &graph) {

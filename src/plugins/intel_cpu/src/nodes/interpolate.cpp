@@ -296,10 +296,10 @@ private:
     }
 
     void nn_planar() {
-        std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-        std::cout << "nn_planar()" << "\n";
-        std::cout << "isa = " << isa << "\n";
-        std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+        // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+        // std::cout << "nn_planar()" << "\n";
+        // std::cout << "isa = " << isa << "\n";
+        // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
 
         const Precision prc = jcp_.src_prc;
         // const bool is_i8_or_u8 =
@@ -317,9 +317,9 @@ private:
         }
 
         // if (is_i8_or_u8 && attr_.post_ops_.len() != 0) {
-        if (should_use_emul_gather && attr_.post_ops_.len() != 0) {
-            IE_THROW() << "Interpolate with gather emulation doesn't support fusing";
-        }
+        // if (should_use_emul_gather && attr_.post_ops_.len() != 0) {
+        //     IE_THROW() << "Interpolate with gather emulation doesn't support fusing";
+        // }
         Xbyak::Reg64 reg_index_h = reg_src_aux1;
         Xbyak::Reg64 reg_index_w = reg_src_aux2;
         mov(reg_index_h, reg_index);
@@ -365,8 +365,22 @@ private:
                 jl(nn_loop_end_label, T_NEAR);
                 // if (is_i8_or_u8) {
                 if (should_use_emul_gather) {
-                    gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, step);
+                    // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                    // std::cout << "should_use_emul_gather" << "\n";
+                    // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+
+                    // gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, step);
+
+                    uni_vmovdqu(vmm_index, ptr[reg_index]);
+                    gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false);
+                    if (attr_.post_ops_.len() != 0)
+                        apply_post_ops(jcp_.dst_prc, 1);
+                    store(vmm_val, reg_dst, step);
                 } else {
+                    // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                    // std::cout << "!should_use_emul_gather" << "\n";
+                    // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+
                     uni_vmovdqu(vmm_index, ptr[reg_index]);
                     uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
                     vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
@@ -384,12 +398,12 @@ private:
             L(nn_loop_end_label);
 
             // if (is_i8_or_u8) {
-            if (should_use_emul_gather) {
-                    const int tail_count = jcp_.OW % step;
-                    gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, tail_count);
-                    add(reg_dst, tail_count * jcp_.dst_data_size);
-                    add(reg_index, tail_count * jcp_.indices_size);
-            } else {
+            // if (should_use_emul_gather) {
+            //         const int tail_count = jcp_.OW % step;
+            //         gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, tail_count);
+            //         add(reg_dst, tail_count * jcp_.dst_data_size);
+            //         add(reg_index, tail_count * jcp_.indices_size);
+            // } else {
                 L(nn_tail_loop_label);
                 {
                     cmp(reg_work_amount, 1);
@@ -409,7 +423,7 @@ private:
                     sub(reg_work_amount, scalar_step);
 
                     jmp(nn_tail_loop_label, T_NEAR);
-                }
+                // }
                 L(nn_tail_loop_end_label);    // inner loop end
 
             //increment index_h to next row
@@ -1314,22 +1328,22 @@ private:
     inline void gather_i32_indices(Vmm vmm_src, const Xbyak::Reg64 &base, int offset, Vmm vmm_indices, int scale,
                                 Precision src_prc, bool is_scalar) {
         Xbyak::Address table_idx = ptr[base + offset + vmm_indices * scale];
-        if ((isa == cpu::x64::avx512_core) && !is_scalar) {
-            // [0-15] bit of int to mask
-            kmovw(k_mask, cubic_planar_table_val(3));
-            if (src_prc == Precision::FP32) {
-                vgatherdps(vmm_src | k_mask, table_idx);  // dword index, packed single data
-            } else if (src_prc == Precision::I32) {
-                vpgatherdd(vmm_src | k_mask, table_idx);  // dword index, dword data
-            }
-        } else if ((isa == cpu::x64::avx2) && !is_scalar) {
-            uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-            if (src_prc == Precision::FP32) {
-                vgatherdps(vmm_src, table_idx, vmm_mask);
-            } else if (src_prc == Precision::I32) {
-                vpgatherdd(vmm_src, table_idx, vmm_mask);
-            }
-        } else {
+        // if ((isa == cpu::x64::avx512_core) && !is_scalar) {
+        //     // [0-15] bit of int to mask
+        //     kmovw(k_mask, cubic_planar_table_val(3));
+        //     if (src_prc == Precision::FP32) {
+        //         vgatherdps(vmm_src | k_mask, table_idx);  // dword index, packed single data
+        //     } else if (src_prc == Precision::I32) {
+        //         vpgatherdd(vmm_src | k_mask, table_idx);  // dword index, dword data
+        //     }
+        // } else if ((isa == cpu::x64::avx2) && !is_scalar) {
+        //     uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+        //     if (src_prc == Precision::FP32) {
+        //         vgatherdps(vmm_src, table_idx, vmm_mask);
+        //     } else if (src_prc == Precision::I32) {
+        //         vpgatherdd(vmm_src, table_idx, vmm_mask);
+        //     }
+        // } else {
             const int gpr_size = 8;
             sub(rsp, gpr_size);
             // move content in register to content in address(ptr[])
@@ -1352,7 +1366,7 @@ private:
             // restore GPR state
             mov(reg_tmp_64, ptr[rsp]);
             add(rsp, gpr_size);
-        }
+        // }
     }
 
     /**
@@ -3341,11 +3355,15 @@ size_t Interpolate::getSpatialDimsNum(const Dim rank) {
 }
 
 bool Interpolate::canFuse(const NodePtr& node) const {
-    if (!mayiuse(cpu::x64::sse41) || interpAttrs.mode == InterpolateMode::linear) {
+    // if (!mayiuse(cpu::x64::sse41) || interpAttrs.mode == InterpolateMode::linear) {
+
+    if (interpAttrs.mode == InterpolateMode::linear) {
         return false;
     }
 
     return canFuseSimpleOperation(node);
+
+    return false;
 }
 
 bool Interpolate::created() const {
