@@ -299,20 +299,10 @@ private:
     }
 
     void nn_planar() {
-        // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-        // std::cout << "nn_planar()" << "\n";
-        // std::cout << "isa = " << isa << "\n";
-        // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-
         const Precision prc = jcp_.src_prc;
         const bool can_copy = attr_.post_ops_.len() == 0 && prc == jcp_.dst_prc;
         const bool native_gather_available = prc == Precision::FP32 &&
                                              (isa == cpu::x64::avx2 || isa == cpu::x64::avx512_core);
-        // const bool can_use_gather_store = prc == jcp_.dst_prc &&
-        //                                     attr_.post_ops_.len() == 0 &&
-        //                                     ((prc == InferenceEngine::Precision::FP32 && isa == cpu::x64::sse41) ||
-        //                                      prc == InferenceEngine::Precision::I8 ||
-        //                                      prc == InferenceEngine::Precision::U8);
         int step;
         if (prc == Precision::I8 || prc == Precision::U8) {
             step = vlen / sizeof(int8_t);
@@ -396,7 +386,7 @@ private:
                     gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, step);
                 } else {
                     uni_vmovdqu(vmm_index, ptr[reg_index]);
-                    gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, prc, false);
+                    gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, prc, false, false);
                     if (attr_.post_ops_.len() != 0) {
                         apply_post_ops(jcp_.dst_prc, 1);
                     }
@@ -411,18 +401,18 @@ private:
             L(nn_loop_end_label);
 
             if (can_copy) {
-                    std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-                    std::cout << "can_copy" << "\n";
-                    std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                // std::cout << "can_copy" << "\n";
+                // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
 
-                    const int tail_count = jcp_.OW % step;
-                    gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, tail_count);
-                    add(reg_dst, tail_count * jcp_.dst_data_size);
-                    add(reg_index, tail_count * jcp_.indices_size);
+                const int tail_count = jcp_.OW % step;
+                gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, tail_count);
+                add(reg_dst, tail_count * jcp_.dst_data_size);
+                add(reg_index, tail_count * jcp_.indices_size);
             } else {
-                std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-                std::cout << "!can_copy" << "\n";
-                std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                // std::cout << "!can_copy" << "\n";
+                // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
 
                 L(nn_tail_loop_label);
                 {
@@ -1347,24 +1337,28 @@ private:
 
     // always gather to Vmm, compute with Vmm, store with Xmm if scalar_step
     inline void gather_i32_indices(Vmm vmm_src, const Xbyak::Reg64 &base, int offset, Vmm vmm_indices, int scale,
-                                Precision src_prc, bool is_scalar) {
+                                Precision src_prc, bool is_scalar, bool is_cubic = true) {
         Xbyak::Address table_idx = ptr[base + offset + vmm_indices * scale];
         if ((isa == cpu::x64::avx512_core) && !is_scalar) {
-            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-            std::cout << "gather_i32_indices(), avx512_core" << "\n";
-            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+            // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+            // std::cout << "gather_i32_indices(), avx512_core" << "\n";
+            // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
 
-            // [0-15] bit of int to mask
-            kmovw(k_mask, cubic_planar_table_val(3));
+            if (is_cubic) {
+                // [0-15] bit of int to mask
+                kmovw(k_mask, cubic_planar_table_val(3));
+            } else {
+                kxnord(k_mask, k_mask, k_mask);
+            }
             if (src_prc == Precision::FP32) {
                 vgatherdps(vmm_src | k_mask, table_idx);  // dword index, packed single data
             } else if (src_prc == Precision::I32) {
                 vpgatherdd(vmm_src | k_mask, table_idx);  // dword index, dword data
             }
         } else if ((isa == cpu::x64::avx2) && !is_scalar) {
-            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-            std::cout << "gather_i32_indices(), avx2" << "\n";
-            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+            // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+            // std::cout << "gather_i32_indices(), avx2" << "\n";
+            // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
 
             uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
             if (src_prc == Precision::FP32) {
@@ -1373,9 +1367,9 @@ private:
                 vpgatherdd(vmm_src, table_idx, vmm_mask);
             }
         } else {
-            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-            std::cout << "gather_i32_indices(), sse41" << "\n";
-            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+            // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+            // std::cout << "gather_i32_indices(), sse41" << "\n";
+            // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
 
             const int gpr_size = 8;
             sub(rsp, gpr_size);
@@ -1414,9 +1408,9 @@ private:
      */
     inline void gather_i32_indices_store(const Xbyak::Reg64 &dest_addr, const Xbyak::Reg64 &source_addr,
                                          const Xbyak::Reg64 &ind_addr, Precision prc, int gather_num) {
-        std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-        std::cout << "gather_i32_indices_store()" << "\n";
-        std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+        // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+        // std::cout << "gather_i32_indices_store()" << "\n";
+        // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
 
         for (size_t i = 0; i < gather_num; ++i) {
             if (prc == Precision::FP32) {
@@ -3290,7 +3284,9 @@ Interpolate::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAtt
     // } else if (mayiuse(cpu::x64::avx2) && allowFp32) {
     //     interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::avx2>(jcp, *attr.get()));
     } else if (interpAttrs.inPrc == InferenceEngine::Precision::FP32) {
-        if (mayiuse(cpu::x64::avx2)) {
+        if (mayiuse(cpu::x64::avx512_core) && isNearest) {
+            interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::avx512_core>(jcp, *attr.get()));
+        } else if (mayiuse(cpu::x64::avx2)) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::avx2>(jcp, *attr.get()));
         } else if (mayiuse(cpu::x64::sse41) && isNearest) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::sse41>(jcp, *attr.get()));
