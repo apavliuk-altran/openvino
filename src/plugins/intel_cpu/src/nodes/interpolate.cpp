@@ -195,6 +195,9 @@ private:
     Xbyak::Reg64 reg_d_bias = rcx;
     Xbyak::Reg32 reg_index_offset = edx;
 
+    // for nearset planar
+    Xbyak::Reg64 reg_src_h = rsi;
+
     // for cubic planar
     Xbyak::Reg64 reg_tbl_y = rsi;
     Xbyak::Reg64 reg_tbl_x = rbp;
@@ -302,21 +305,21 @@ private:
         // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
 
         const Precision prc = jcp_.src_prc;
-        // const bool is_i8_or_u8 =
-        //     (jcp_.src_prc == InferenceEngine::Precision::I8 && jcp_.dst_prc == InferenceEngine::Precision::I8)
-        //     || (jcp_.src_prc == InferenceEngine::Precision::U8 && jcp_.dst_prc == InferenceEngine::Precision::U8);
-        const bool should_use_emul_gather = prc == jcp_.dst_prc &&
-                                            ((prc == InferenceEngine::Precision::FP32 && isa == cpu::x64::sse41) ||
-                                            prc == InferenceEngine::Precision::I8 ||
-                                            prc == InferenceEngine::Precision::U8);
+        const bool can_copy = attr_.post_ops_.len() == 0 && prc == jcp_.dst_prc;
+        const bool native_gather_available = prc == Precision::FP32 &&
+                                             (isa == cpu::x64::avx2 || isa == cpu::x64::avx512_core);
+        // const bool can_use_gather_store = prc == jcp_.dst_prc &&
+        //                                     attr_.post_ops_.len() == 0 &&
+        //                                     ((prc == InferenceEngine::Precision::FP32 && isa == cpu::x64::sse41) ||
+        //                                      prc == InferenceEngine::Precision::I8 ||
+        //                                      prc == InferenceEngine::Precision::U8);
         int step;
-        if (prc == InferenceEngine::Precision::I8 || prc == InferenceEngine::Precision::U8) {
+        if (prc == Precision::I8 || prc == Precision::U8) {
             step = vlen / sizeof(int8_t);
         } else {
             step = vlen / sizeof(float);
         }
 
-        // if (is_i8_or_u8 && attr_.post_ops_.len() != 0) {
         // if (should_use_emul_gather && attr_.post_ops_.len() != 0) {
         //     IE_THROW() << "Interpolate with gather emulation doesn't support fusing";
         // }
@@ -343,7 +346,7 @@ private:
             //reset work_amount to OW
             mov(reg_work_amount, jcp_.OW);
 
-            Xbyak::Reg64 reg_src_h = rsi;
+            // Xbyak::Reg64 reg_src_h = rsi;
             mov(reg_src_h, reg_src);
             // index_h * IW * dataSize done when built to avoid redundent compute
             mov(reg_index_offset, dword[reg_index_h]);
@@ -351,8 +354,6 @@ private:
 
             // reset index_w, index_w * dataSize done when built to avoid redundent compute
             mov(reg_index, reg_index_w);
-
-            // int step = vlen / (is_i8_or_u8 ? sizeof(int8_t) : sizeof(float));
 
             Xbyak::Label nn_loop_label;
             Xbyak::Label nn_loop_end_label;
@@ -363,32 +364,44 @@ private:
             {
                 cmp(reg_work_amount, step);
                 jl(nn_loop_end_label, T_NEAR);
+/*
                 // if (is_i8_or_u8) {
-                if (should_use_emul_gather) {
-                    // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-                    // std::cout << "should_use_emul_gather" << "\n";
-                    // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                // if (should_use_emul_gather) {
+                //     // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                //     // std::cout << "should_use_emul_gather" << "\n";
+                //     // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
 
-                    // gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, step);
+                //     // gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, step);
 
-                    uni_vmovdqu(vmm_index, ptr[reg_index]);
-                    gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false);
-                    if (attr_.post_ops_.len() != 0)
-                        apply_post_ops(jcp_.dst_prc, 1);
-                    store(vmm_val, reg_dst, step);
+                //     uni_vmovdqu(vmm_index, ptr[reg_index]);
+                //     gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false);
+                //     if (attr_.post_ops_.len() != 0)
+                //         apply_post_ops(jcp_.dst_prc, 1);
+                //     store(vmm_val, reg_dst, step);
+                // } else {
+                //     // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                //     // std::cout << "!should_use_emul_gather" << "\n";
+                //     // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+
+                //     uni_vmovdqu(vmm_index, ptr[reg_index]);
+                //     // uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+                //     // vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
+                //     gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false);
+                //     if (attr_.post_ops_.len() != 0)
+                //         apply_post_ops(jcp_.dst_prc, 1);
+                //     store(vmm_val, reg_dst, step);
+                // }
+*/
+                if (can_copy && !native_gather_available) {
+                    gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, step);
                 } else {
-                    // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-                    // std::cout << "!should_use_emul_gather" << "\n";
-                    // std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
-
                     uni_vmovdqu(vmm_index, ptr[reg_index]);
-                    uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-                    vgatherdps(vmm_val, ptr[reg_src_h + vmm_index], vmm_mask);
-                    if (attr_.post_ops_.len() != 0)
+                    gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, prc, false);
+                    if (attr_.post_ops_.len() != 0) {
                         apply_post_ops(jcp_.dst_prc, 1);
+                    }
                     store(vmm_val, reg_dst, step);
                 }
-
                 add(reg_dst, step * jcp_.dst_data_size);
                 add(reg_index, step * jcp_.indices_size);
                 sub(reg_work_amount, step);
@@ -397,13 +410,20 @@ private:
             }
             L(nn_loop_end_label);
 
-            // if (is_i8_or_u8) {
-            // if (should_use_emul_gather) {
-            //         const int tail_count = jcp_.OW % step;
-            //         gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, tail_count);
-            //         add(reg_dst, tail_count * jcp_.dst_data_size);
-            //         add(reg_index, tail_count * jcp_.indices_size);
-            // } else {
+            if (can_copy) {
+                    std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                    std::cout << "can_copy" << "\n";
+                    std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+
+                    const int tail_count = jcp_.OW % step;
+                    gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, tail_count);
+                    add(reg_dst, tail_count * jcp_.dst_data_size);
+                    add(reg_index, tail_count * jcp_.indices_size);
+            } else {
+                std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+                std::cout << "!can_copy" << "\n";
+                std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+
                 L(nn_tail_loop_label);
                 {
                     cmp(reg_work_amount, 1);
@@ -414,18 +434,19 @@ private:
                     add(reg_src_aux, reg_index_offset);
 
                     load(reg_src_aux, vmm_val, scalar_step);
-                    if (attr_.post_ops_.len() != 0)
+                    if (attr_.post_ops_.len() != 0) {
                         apply_post_ops(jcp_.dst_prc, 1);
-                    store(vmm_val, reg_dst, scalar_step);
                     }
+                    store(vmm_val, reg_dst, scalar_step);
+
                     add(reg_dst, scalar_step * jcp_.dst_data_size);
                     add(reg_index, scalar_step * jcp_.indices_size);
                     sub(reg_work_amount, scalar_step);
 
                     jmp(nn_tail_loop_label, T_NEAR);
-                // }
+                }
                 L(nn_tail_loop_end_label);    // inner loop end
-
+            }
             //increment index_h to next row
             add(reg_index_h, jcp_.indices_size);
 
@@ -1328,22 +1349,34 @@ private:
     inline void gather_i32_indices(Vmm vmm_src, const Xbyak::Reg64 &base, int offset, Vmm vmm_indices, int scale,
                                 Precision src_prc, bool is_scalar) {
         Xbyak::Address table_idx = ptr[base + offset + vmm_indices * scale];
-        // if ((isa == cpu::x64::avx512_core) && !is_scalar) {
-        //     // [0-15] bit of int to mask
-        //     kmovw(k_mask, cubic_planar_table_val(3));
-        //     if (src_prc == Precision::FP32) {
-        //         vgatherdps(vmm_src | k_mask, table_idx);  // dword index, packed single data
-        //     } else if (src_prc == Precision::I32) {
-        //         vpgatherdd(vmm_src | k_mask, table_idx);  // dword index, dword data
-        //     }
-        // } else if ((isa == cpu::x64::avx2) && !is_scalar) {
-        //     uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
-        //     if (src_prc == Precision::FP32) {
-        //         vgatherdps(vmm_src, table_idx, vmm_mask);
-        //     } else if (src_prc == Precision::I32) {
-        //         vpgatherdd(vmm_src, table_idx, vmm_mask);
-        //     }
-        // } else {
+        if ((isa == cpu::x64::avx512_core) && !is_scalar) {
+            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+            std::cout << "gather_i32_indices(), avx512_core" << "\n";
+            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+
+            // [0-15] bit of int to mask
+            kmovw(k_mask, cubic_planar_table_val(3));
+            if (src_prc == Precision::FP32) {
+                vgatherdps(vmm_src | k_mask, table_idx);  // dword index, packed single data
+            } else if (src_prc == Precision::I32) {
+                vpgatherdd(vmm_src | k_mask, table_idx);  // dword index, dword data
+            }
+        } else if ((isa == cpu::x64::avx2) && !is_scalar) {
+            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+            std::cout << "gather_i32_indices(), avx2" << "\n";
+            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+
+            uni_vpcmpeqd(vmm_mask, vmm_mask, vmm_mask);
+            if (src_prc == Precision::FP32) {
+                vgatherdps(vmm_src, table_idx, vmm_mask);
+            } else if (src_prc == Precision::I32) {
+                vpgatherdd(vmm_src, table_idx, vmm_mask);
+            }
+        } else {
+            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+            std::cout << "gather_i32_indices(), sse41" << "\n";
+            std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+
             const int gpr_size = 8;
             sub(rsp, gpr_size);
             // move content in register to content in address(ptr[])
@@ -1366,7 +1399,7 @@ private:
             // restore GPR state
             mov(reg_tmp_64, ptr[rsp]);
             add(rsp, gpr_size);
-        // }
+        }
     }
 
     /**
@@ -1381,6 +1414,10 @@ private:
      */
     inline void gather_i32_indices_store(const Xbyak::Reg64 &dest_addr, const Xbyak::Reg64 &source_addr,
                                          const Xbyak::Reg64 &ind_addr, Precision prc, int gather_num) {
+        std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+        std::cout << "gather_i32_indices_store()" << "\n";
+        std::cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n";
+
         for (size_t i = 0; i < gather_num; ++i) {
             if (prc == Precision::FP32) {
                 mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
