@@ -680,8 +680,10 @@ INSTANTIATE_TEST_SUITE_P(smoke_InterpolateNearestExt_FP32_Layout_Test, Interpola
             interpolateCasesNearestExt_Smoke,
             ::testing::ValuesIn(shapeParams4D_NearestExt_Smoke),
             ::testing::Values(ElementType::f32),
-            ::testing::ValuesIn(filterCPUInfoForDevice(true, false)),
-            ::testing::ValuesIn(interpolateFusingParamsSet),
+            // ::testing::ValuesIn(filterCPUInfoForDevice(true, false)),
+            ::testing::ValuesIn(filterCPUInfoForDevice(true, true)),
+            // ::testing::ValuesIn(interpolateFusingParamsSet),
+            ::testing::Values(emptyFusingSpec),
             ::testing::ValuesIn(filterAdditionalConfig(false))),
     InterpolateLayerCPUTest::getTestCaseName);
 
@@ -1015,7 +1017,7 @@ struct InterpolateLayerCPUBenchmarkTest : BenchmarkLayerTest<InterpolateLayerCPU
 
 TEST_P(InterpolateLayerCPUBenchmarkTest, benchmark) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
-    Run("Interpolate", std::chrono::milliseconds(2000), 100);
+    Run("", std::chrono::milliseconds(2000), 100);
 }
 
 std::vector<ngraph::op::v4::Interpolate::InterpolateMode> interpolateModesBenchmark{
@@ -1063,9 +1065,9 @@ const std::vector<std::vector<int64_t>> defaultAxesBenchmark = {
 };
 
 const std::vector<fusingSpecificParams> interpolateFusingParamsBenchmark{
-        emptyFusingSpec,
-        // fusingSwish,
-        // fusingFakeQuantizePerTensorRelu,
+        // emptyFusingSpec,
+        fusingSwish,
+        fusingFakeQuantizePerTensorRelu,
 };
 
 #pragma GCC diagnostic push
@@ -1087,18 +1089,27 @@ std::vector<std::map<std::string, std::string>> filterAdditionalConfigBenchmark(
 
 std::vector<CPUSpecificParams> filterCPUInfoForDeviceTestI8() {
     std::vector<CPUSpecificParams> resCPUParams;
+
+    // resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
+    // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx512"}, "jit_avx512"});
+    // resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx512"}, "jit_avx512"});
+
     // resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
     // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
-    // resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
-    resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
-    resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
+    resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
+
+    // resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
+    // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
+    // resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_sse42"}, "jit_sse42"});
     return resCPUParams;
 }
 
 #pragma GCC diagnostic pop
 
-const std::vector<ElementType> prcBenchmark = {ElementType::f32, ElementType::i8};
-// const std::vector<ElementType> prcBenchmark = {ElementType::f32};
+// const std::vector<ElementType> prcBenchmark = {ElementType::f32, ElementType::i8};
+// const std::vector<ElementType> prcBenchmark = {ElementType::f32, ElementType::i8, ElementType::u8};
+const std::vector<ElementType> prcBenchmark = {ElementType::f32};
+// const std::vector<ElementType> prcBenchmark = {ElementType::i8, ElementType::u8};
 // const std::vector<ElementType> prcBenchmark = {ElementType::i8};
 
 const auto interpolateCasesBenchmark = ::testing::Combine(
