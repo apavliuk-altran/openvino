@@ -680,10 +680,8 @@ INSTANTIATE_TEST_SUITE_P(smoke_InterpolateNearestExt_FP32_Layout_Test, Interpola
             interpolateCasesNearestExt_Smoke,
             ::testing::ValuesIn(shapeParams4D_NearestExt_Smoke),
             ::testing::Values(ElementType::f32),
-            // ::testing::ValuesIn(filterCPUInfoForDevice(true, false)),
             ::testing::ValuesIn(filterCPUInfoForDevice(true, true)),
-            // ::testing::ValuesIn(interpolateFusingParamsSet),
-            ::testing::Values(emptyFusingSpec),
+            ::testing::ValuesIn(interpolateFusingParamsSet),
             ::testing::ValuesIn(filterAdditionalConfig(false))),
     InterpolateLayerCPUTest::getTestCaseName);
 
@@ -692,7 +690,7 @@ INSTANTIATE_TEST_SUITE_P(InterpolateNearestExt_FP32_Layout_Test, InterpolateLaye
             interpolateCasesNearestExt_Full,
             ::testing::ValuesIn(shapeParams4D_NearestExt_Full),
             ::testing::Values(ElementType::f32),
-            ::testing::ValuesIn(filterCPUInfoForDevice(true, false)),
+            ::testing::ValuesIn(filterCPUInfoForDevice(true, true)),
             ::testing::ValuesIn(interpolateFusingParamsSet),
             ::testing::ValuesIn(filterAdditionalConfig(false))),
     InterpolateLayerCPUTest::getTestCaseName);
@@ -936,7 +934,7 @@ INSTANTIATE_TEST_SUITE_P(smoke_InterpolateNearestExt_5D_FP32_Layout_Test, Interp
             interpolateCasesNearestExt5D_Smoke,
             ::testing::ValuesIn(shapeParams5D_NearestExt_Smoke),
             ::testing::Values(ElementType::f32),
-            ::testing::ValuesIn(filterCPUInfoForDevice5D(true, false)),
+            ::testing::ValuesIn(filterCPUInfoForDevice5D(true, true)),
             ::testing::ValuesIn(interpolateFusingParamsSet),
             ::testing::ValuesIn(filterAdditionalConfig(false))),
     InterpolateLayerCPUTest::getTestCaseName);
@@ -946,7 +944,7 @@ INSTANTIATE_TEST_SUITE_P(InterpolateNearestExt_5D_FP32_Layout_Test, InterpolateL
             interpolateCasesNearestExt5D_Full,
             ::testing::ValuesIn(shapeParams5D_NearestExt_Full),
             ::testing::Values(ElementType::f32),
-            ::testing::ValuesIn(filterCPUInfoForDevice5D(true, false)),
+            ::testing::ValuesIn(filterCPUInfoForDevice5D(true, true)),
             ::testing::ValuesIn(interpolateFusingParamsSet),
             ::testing::ValuesIn(filterAdditionalConfig(false))),
     InterpolateLayerCPUTest::getTestCaseName);
