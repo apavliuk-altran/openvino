@@ -296,12 +296,11 @@ private:
     }
 
     void nn_planar() {
-        const Precision prc = jcp_.src_prc;
-        const bool can_copy = attr_.post_ops_.len() == 0 && prc == jcp_.dst_prc;
-        const bool native_gather_available = prc == Precision::FP32 &&
+        const bool can_copy = attr_.post_ops_.len() == 0 && jcp_.src_prc == jcp_.dst_prc;
+        const bool native_gather_available = jcp_.src_prc == Precision::FP32 &&
                                              (isa == cpu::x64::avx2 || isa == cpu::x64::avx512_core);
         int step;
-        if (prc == Precision::I8 || prc == Precision::U8) {
+        if (can_copy && (jcp_.src_prc == Precision::I8 || jcp_.src_prc == Precision::U8)) {
             step = vlen / sizeof(int8_t);
         } else {
             step = vlen / sizeof(float);
@@ -350,10 +349,17 @@ private:
                 jl(nn_loop_end_label, T_NEAR);
 
                 if (can_copy && !native_gather_available) {
-                    gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, step);
-                } else {
+                    gather_i32_indices_store(reg_dst, reg_src_h, reg_index, jcp_.src_prc, step);
+                } else if (jcp_.src_prc == Precision::FP32 || jcp_.src_prc == Precision::I32) {
                     uni_vmovdqu(vmm_index, ptr[reg_index]);
-                    gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, prc, false, false);
+                    gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false, false);
+                    if (attr_.post_ops_.len() != 0) {
+                        apply_post_ops(jcp_.dst_prc, 1);
+                    }
+                    store(vmm_val, reg_dst, step);
+                } else {
+                    gather_i32_indices_store(reg_dst, reg_src_h, reg_index, jcp_.src_prc, step);
+                    load(reg_dst, vmm_val, step);
                     if (attr_.post_ops_.len() != 0) {
                         apply_post_ops(jcp_.dst_prc, 1);
                     }
@@ -369,7 +375,7 @@ private:
 
             if (can_copy) {
                 const int tail_count = jcp_.OW % step;
-                gather_i32_indices_store(reg_dst, reg_src_h, reg_index, prc, tail_count);
+                gather_i32_indices_store(reg_dst, reg_src_h, reg_index, jcp_.src_prc, tail_count);
                 add(reg_dst, tail_count * jcp_.dst_data_size);
                 add(reg_index, tail_count * jcp_.indices_size);
             } else {
@@ -1826,8 +1832,8 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
     // 3. JIT kernel for i8/u8 with sse41 or above (without fusing)
     const bool allowPlanarFp32 = inputPrecision == Precision::FP32 && (mayiuse(cpu::x64::avx2) ||
                                                                        interpAttrs.mode == InterpolateMode::nearest);
-    const bool allowPlanarI8OrU8 = fusedWith.empty() &&
-                                   interpAttrs.mode == InterpolateMode::nearest &&
+    // const bool allowPlanarI8OrU8 = fusedWith.empty() &&
+    const bool allowPlanarI8OrU8 = interpAttrs.mode == InterpolateMode::nearest &&
                                    ((inputPrecision == Precision::I8 && outputPrecision == Precision::I8) ||
                                     (inputPrecision == Precision::U8 && outputPrecision == Precision::U8));
 
@@ -3208,8 +3214,8 @@ Interpolate::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAtt
     jcp.layout = interpAttrs.layout;
 
     const bool isNearest = jcp.mode == InterpolateMode::nearest;
-    const bool allowI8OrU8 = attr.get()->post_ops_.len() == 0 &&
-                             isNearest &&
+    // const bool allowI8OrU8 = attr.get()->post_ops_.len() == 0 &&
+    const bool allowI8OrU8 = isNearest &&
                              ((interpAttrs.inPrc == InferenceEngine::Precision::I8 &&
                                interpAttrs.outPrc == InferenceEngine::Precision::I8) ||
                               (interpAttrs.inPrc == InferenceEngine::Precision::U8 &&
