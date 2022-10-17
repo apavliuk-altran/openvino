@@ -1063,7 +1063,7 @@ const std::vector<std::vector<int64_t>> defaultAxesBenchmark = {
 };
 
 const std::vector<fusingSpecificParams> interpolateFusingParamsBenchmark{
-        // emptyFusingSpec,
+        emptyFusingSpec,
         // fusingSwish,
         // fusingFakeQuantizePerTensorRelu,
 
@@ -1072,7 +1072,7 @@ const std::vector<fusingSpecificParams> interpolateFusingParamsBenchmark{
         // fusingGelu,
             // fusingSigmoid,
             // fusingClamp,
-            fusingTanh,
+                    // fusingTanh,
             // fusingAbs,
         // fusingSqrt,
         // fusingPReluPerChannel,
@@ -1095,7 +1095,7 @@ const std::vector<fusingSpecificParams> interpolateFusingParamsBenchmark{
         // fusingSumEluFQ,
         // fusingMultiplyPerTensor,
         // fusingMultiplyPerChannel,
-            fusingAddPerTensor,
+                    // fusingAddPerTensor,
         // fusingAddPerChannel,
             // fusingSubtractPerTensor,
         // fusingSubtractPerChannel,
@@ -1126,13 +1126,13 @@ std::vector<std::map<std::string, std::string>> filterAdditionalConfigBenchmark(
 std::vector<CPUSpecificParams> filterCPUInfoForDeviceTestI8() {
     std::vector<CPUSpecificParams> resCPUParams;
 
-    // resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
-    // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx512"}, "jit_avx512"});
-    // resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx512"}, "jit_avx512"});
+    resCPUParams.push_back(CPUSpecificParams{{nChw16c, x, x, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512"});
+    resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx512"}, "jit_avx512"});
+    resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx512"}, "jit_avx512"});
 
     // resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2"});
     // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_avx2"}, "jit_avx2"});
-    resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
+    // resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
 
     // resCPUParams.push_back(CPUSpecificParams{{nChw8c, x, x, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42"});
     // resCPUParams.push_back(CPUSpecificParams{{nhwc, x, x, x}, {nhwc}, {"jit_sse42"}, "jit_sse42"});
@@ -1144,9 +1144,10 @@ std::vector<CPUSpecificParams> filterCPUInfoForDeviceTestI8() {
 
 // const std::vector<ElementType> prcBenchmark = {ElementType::f32, ElementType::i8};
 // const std::vector<ElementType> prcBenchmark = {ElementType::f32, ElementType::i8, ElementType::u8};
-const std::vector<ElementType> prcBenchmark = {ElementType::f32};
+// const std::vector<ElementType> prcBenchmark = {ElementType::f32};
 // const std::vector<ElementType> prcBenchmark = {ElementType::i8, ElementType::u8};
 // const std::vector<ElementType> prcBenchmark = {ElementType::i8};
+const std::vector<ElementType> prcBenchmark = {ElementType::bf16};
 
 const auto interpolateCasesBenchmark = ::testing::Combine(
         ::testing::ValuesIn(interpolateModesBenchmark),       // InterpolateMode
