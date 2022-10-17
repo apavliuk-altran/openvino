@@ -1363,23 +1363,66 @@ private:
      */
     inline void gather_i32_indices_store(const Xbyak::Reg64 &dest_addr, const Xbyak::Reg64 &source_addr,
                                          const Xbyak::Reg64 &ind_addr, Precision prc, int gather_num) {
+        // for (size_t i = 0; i < gather_num; ++i) {
+        //     if (prc == Precision::FP32) {
+        //         mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
+        //         mov(reg_tmp_64.cvt32(), ptr[source_addr + reg_tmp_64]);
+        //         mov(ptr[dest_addr + i * prc.size()], reg_tmp_64.cvt32());
+        //     } else if (prc == Precision::BF16) {
+        //         mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
+        //         mov(reg_tmp_64.cvt16(), ptr[source_addr + reg_tmp_64]);
+        //         mov(ptr[dest_addr + i * prc.size()], reg_tmp_64.cvt16());
+        //     } else if (prc == Precision::I8 || prc == Precision::U8) {
+        //         mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
+        //         mov(reg_tmp_64.cvt8(), ptr[source_addr + reg_tmp_64]);
+        //         mov(ptr[dest_addr + i], reg_tmp_64.cvt8());
+        //     } else {
+        //         IE_THROW() << "Unsupported precision";
+        //     }
+
         for (size_t i = 0; i < gather_num; ++i) {
-            if (prc == Precision::FP32) {
-                mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
-                mov(reg_tmp_64.cvt32(), ptr[source_addr + reg_tmp_64]);
-                mov(ptr[dest_addr + i * prc.size()], reg_tmp_64.cvt32());
-            } else if (prc == Precision::BF16) {
-                mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
-                mov(reg_tmp_64.cvt16(), ptr[source_addr + reg_tmp_64]);
-                mov(ptr[dest_addr + i], reg_tmp_64.cvt16());
-            } else if (prc == Precision::I8 || prc == Precision::U8) {
-                mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
-                mov(reg_tmp_64.cvt8(), ptr[source_addr + reg_tmp_64]);
-                mov(ptr[dest_addr + i], reg_tmp_64.cvt8());
-            } else {
-                IE_THROW() << "Unsupported precision";
+            const auto scr_ptr = ptr[source_addr + reg_tmp_64];
+            const auto dst_ptr = ptr[dest_addr + i * prc.size()];
+            mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
+            switch (prc) {
+                case Precision::FP32:
+                    mov(reg_tmp_64.cvt32(), scr_ptr);
+                    mov(dst_ptr, reg_tmp_64.cvt32());
+                    break;
+                case Precision::BF16:
+                    mov(reg_tmp_64.cvt16(), scr_ptr);
+                    mov(dst_ptr, reg_tmp_64.cvt16());
+                    break;
+                case Precision::I8:
+                case Precision::U8:
+                    mov(reg_tmp_64.cvt8(), scr_ptr);
+                    mov(dst_ptr, reg_tmp_64.cvt8());
+                    break;
+                default:
+                    IE_THROW() << "Unsupported precision";
             }
         }
+
+        // Reg reg_tmp;
+        // switch (prc) {
+        //     case Precision::FP32:
+        //         reg_tmp = reg_tmp_64.cvt32();
+        //         break;
+        //     case Precision::BF16:
+        //         reg_tmp = reg_tmp_64.cvt16();
+        //         break;
+        //     case Precision::I8:
+        //     case Precision::U8:
+        //         reg_tmp = reg_tmp_64.cvt8();
+        //         break;
+        //     default:
+        //         IE_THROW() << "Unsupported precision";
+        // }
+        // for (size_t i = 0; i < gather_num; ++i) {
+        //     mov(reg_tmp, ptr[ind_addr + i * sizeof(int32_t)]);
+        //     mov(reg_tmp_64.cvt32(), ptr[source_addr + reg_tmp_64]);
+        //     mov(ptr[dest_addr + i * prc.size()], reg_tmp);
+        // }
     }
 
     // is_broadcast for broadcasting param for depth_wise and quantize(channel-sensitive post-ops), for fusion with plain layout.
