@@ -3233,9 +3233,7 @@ Interpolate::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAtt
             interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::sse41>(jcp, *attr.get()));
         }
     } else if (interpAttrs.inPrc == InferenceEngine::Precision::FP32) {
-        if (mayiuse(cpu::x64::avx512_core) && isNearest) {
-            interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::avx512_core>(jcp, *attr.get()));
-        } else if (mayiuse(cpu::x64::avx2)) {
+        if (mayiuse(cpu::x64::avx2)) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::avx2>(jcp, *attr.get()));
         } else if (mayiuse(cpu::x64::sse41) && isNearest) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::sse41>(jcp, *attr.get()));
