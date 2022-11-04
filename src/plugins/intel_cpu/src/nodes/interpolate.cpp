@@ -97,6 +97,7 @@ struct jit_uni_interpolate_kernel_t : public jit_uni_interpolate_kernel, public 
                 mov(reg_src, ptr[reg_params + GET_OFF(src_ptr[0])]);
                 mov(reg_index, ptr[reg_params + GET_OFF(index)]);
                 mov(reg_work_amount, ptr[reg_params + GET_OFF(work_amount)]);
+                mov(reg_src_aux1, ptr[reg_params + GET_OFF(weight_ptr[0])]);
 
                 switch (jcp_.layout) {
                     case InterpolateLayoutType::planar: {
@@ -296,6 +297,10 @@ private:
     }
 
     void nn_planar() {
+        // std::cout << "*********************************************************************\n";
+        // std::cout << "nn_planar()";
+        // std::cout << "*********************************************************************\n";
+
         const Precision prc = jcp_.src_prc;
         const bool can_copy = attr_.post_ops_.len() == 0 && prc == jcp_.dst_prc;
         const bool native_gather_available = prc == Precision::FP32 &&
@@ -307,25 +312,26 @@ private:
             step = vlen / sizeof(float);
         }
 
+        // reg_index_h = index_kernel.data() + oh;
         Xbyak::Reg64 reg_index_h = reg_src_aux1;
-        Xbyak::Reg64 reg_index_w = reg_src_aux2;
-        mov(reg_index_h, reg_index);
+        // Xbyak::Reg64 reg_index_w = reg_src_aux2;
+        // mov(reg_index_h, reg_index);
         // reg_index represent reg_index_w
-        add(reg_index, jcp_.OH * jcp_.indices_size);
+        // add(reg_index, jcp_.OH * jcp_.indices_size);
         // bk for reset to reg_index_w
-        mov(reg_index_w, reg_index);
+        // mov(reg_index_w, reg_index);
 
-        Xbyak::Label out_loop_label;
-        Xbyak::Label out_loop_end;
+        // Xbyak::Label out_loop_label;
+        // Xbyak::Label out_loop_end;
 
-        Xbyak::Reg64 reg_work_amount_oh = rdi;
-        mov(reg_work_amount_oh, jcp_.OH);
+        // Xbyak::Reg64 reg_work_amount_oh = rdi;
+        // mov(reg_work_amount_oh, jcp_.OH);
 
-        L(out_loop_label);
-        {
+        // L(out_loop_label);
+        // {
             // outloop status
-            cmp(reg_work_amount_oh, 1);
-            jl(out_loop_end, T_NEAR);
+            // cmp(reg_work_amount_oh, 1);
+            // jl(out_loop_end, T_NEAR);
 
             //reset work_amount to OW
             mov(reg_work_amount, jcp_.OW);
@@ -337,7 +343,7 @@ private:
             add(reg_src_h, reg_index_offset);  // reg_src_h now point to begin of row
 
             // reset index_w, index_w * dataSize done when built to avoid redundent compute
-            mov(reg_index, reg_index_w);
+            // mov(reg_index, reg_index_w);
 
             Xbyak::Label nn_loop_label;
             Xbyak::Label nn_loop_end_label;
@@ -397,12 +403,12 @@ private:
                 L(nn_tail_loop_end_label);    // inner loop end
             }
             //increment index_h to next row
-            add(reg_index_h, jcp_.indices_size);
+            // add(reg_index_h, jcp_.indices_size);
 
-            sub(reg_work_amount_oh, 1);
-            jmp(out_loop_label, T_NEAR);
-        }
-        L(out_loop_end);
+            // sub(reg_work_amount_oh, 1);
+            // jmp(out_loop_label, T_NEAR);
+        // }
+        // L(out_loop_end);
     }
 
     void nn_blk() {
@@ -2191,6 +2197,7 @@ void Interpolate::InterpolateJitExecutor::NNCGathered(const uint8_t *in_ptr_, ui
                 arg.work_amount = C;
                 arg.oc_off = 0;
                 arg.post_op_data = post_ops_data_;
+                arg.weight_ptr[0] = nullptr;
                 (*interpolateKernel)(&arg);
             });
         } else {  // for blk
@@ -2213,6 +2220,7 @@ void Interpolate::InterpolateJitExecutor::NNCGathered(const uint8_t *in_ptr_, ui
                     arg.work_amount = static_cast<size_t>(OW);
                     arg.oc_off = cb * blk_size * sizeof(float);
                     arg.post_op_data = post_ops_data_;
+                    arg.weight_ptr[0] = nullptr;
                     (*interpolateKernel)(&arg);
                 }
             });
@@ -2222,6 +2230,10 @@ void Interpolate::InterpolateJitExecutor::NNCGathered(const uint8_t *in_ptr_, ui
 
 void Interpolate::InterpolateJitExecutor::NNPlanar(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
                                                              int B, int C, int ID, int IH, int IW, int OD, int OH, int OW) {
+    // std::cout << "*********************************************************************\n";
+    // std::cout << "NNPlanar()";
+    // std::cout << "*********************************************************************\n";
+
     int *index_d = static_cast<int*>(&indexTable[0]);
     int *index_h = static_cast<int*>(&indexTable[OD]);
     int *index_w = static_cast<int*>(&indexTable[OD + OH]);
@@ -2237,16 +2249,21 @@ void Interpolate::InterpolateJitExecutor::NNPlanar(const uint8_t *in_ptr_, uint8
     }
 
     // TODO: investigate if parallel_for4d() would increase performance, especially for 1 channel
-    parallel_for3d(B, C, OD, [&](size_t b, size_t c, size_t od) {
+    parallel_for4d(B, C, OD, OH, [&](size_t b, size_t c, size_t od, size_t oh) {
         const uint8_t *in_ptr = in_ptr_ + (IW * IH * ID * C * b + IW * IH * ID * c + IW * IH * index_d[od]) * srcDataSize;
-        uint8_t *out_ptr = out_ptr_ + (OW * OH * OD * C * b + OW * OH * OD * c + OW * OH * od) * dstDataSize;
+        uint8_t *out_ptr = out_ptr_ + (OW * OH * OD * C * b + OW * OH * OD * c + OW * OH * od) * dstDataSize
+                                    + oh * OW * dstDataSize;
 
         auto arg = jit_interpolate_call_args();
         arg.src_ptr[0] = in_ptr;
         arg.dst = out_ptr;
-        arg.index = static_cast<int*>(&index_kernel[0]);  // need index_h and index_w in kernel, it's in continous memory so one param
-        arg.oc_off = static_cast<size_t>(c * sizeof(float));
+        // arg.index = static_cast<int*>(&index_kernel[0]);  // need index_h and index_w in kernel, it's in continous memory so one param
+        arg.index = index_kernel.data() + OH;
+        arg.weight_ptr[0] = index_kernel.data() + oh;
         // work_amount is OH(out loop) and OW(inner loop), can get in kernel from jcp.
+        // TODO: workaround!
+        // arg.work_amount = oh;
+        arg.oc_off = static_cast<size_t>(c * sizeof(float));
         arg.post_op_data = post_ops_data_;
         (*interpolateKernel)(&arg);
     });
