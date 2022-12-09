@@ -39,8 +39,7 @@ using InterpolateLayerCPUTestParamsSet = std::tuple<InterpolateSpecificParams,
                                                     fusingSpecificParams,
                                                     std::map<std::string, std::string>>;
 
-class InterpolateLayerCPUTest : public testing::WithParamInterface<InterpolateLayerCPUTestParamsSet>,
-                                virtual public SubgraphBaseTest, public CpuTestWithFusing {
+class InterpolateLayerCPUTestBase : virtual public SubgraphBaseTest, public CpuTestWithFusing {
 public:
     static std::string getTestCaseName(testing::TestParamInfo<InterpolateLayerCPUTestParamsSet> obj) {
         InterpolateSpecificParams specificParams;
@@ -159,16 +158,34 @@ protected:
     ngraph::op::v4::Interpolate::ShapeCalcMode shapeCalcMode;
     size_t inferRequestNum = 0;
 
-    void SetUp() override {
+    ElementType ngPrc;
+    ngraph::ParameterVector params;
+    std::shared_ptr<ov::Node> sizesInput;
+    std::shared_ptr<ov::Node> scalesInput;
+    std::shared_ptr<ov::Node> axesInput;
+    ngraph::op::v4::Interpolate::InterpolateAttrs interpAttr;
+
+    std::shared_ptr<ngraph::op::v4::Interpolate> make_interpolate(const std::shared_ptr<ov::Node>& node) {
+        auto interpolate = std::make_shared<ngraph::op::v4::Interpolate>(node,
+                                                                         sizesInput,
+                                                                         scalesInput,
+                                                                         axesInput,
+                                                                         interpAttr);
+
+        // To be able to run CPU tests for all layouts
+        interpolate->get_rt_info().insert({"enforceAllSupportedLayouts", true});
+        return interpolate;
+     }
+
+    void prepare_setup(const InterpolateLayerCPUTestParamsSet& paramsSet) {
         targetDevice = CommonTestUtils::DEVICE_CPU;
 
         InterpolateSpecificParams specificParams;
         ShapeParams shapeParams;
-        ElementType ngPrc;
         CPUSpecificParams cpuParams;
         fusingSpecificParams fusingParams;
         std::map<std::string, std::string> additionalConfig;
-        std::tie(specificParams, shapeParams, ngPrc, cpuParams, fusingParams, additionalConfig) = this->GetParam();
+        std::tie(specificParams, shapeParams, ngPrc, cpuParams, fusingParams, additionalConfig) = paramsSet;
 
         std::tie(inFmts, outFmts, priority, selectedType) = cpuParams;
         std::tie(postOpMgrPtr, fusedOps) = fusingParams;
@@ -217,9 +234,8 @@ protected:
 
         init_input_shapes(inputShapes);
 
-        auto params = ngraph::builder::makeDynamicParams(ngPrc, {inputDynamicShapes.front()});
+        params = ngraph::builder::makeDynamicParams(ngPrc, {inputDynamicShapes.front()});
 
-        std::shared_ptr<ov::Node> sizesInput, scalesInput;
         if (shapeCalcMode == ngraph::op::v4::Interpolate::ShapeCalcMode::SCALES) {
             if (shapeInputType == ngraph::helpers::InputLayerType::PARAMETER) {
                 auto paramNode = std::make_shared<ngraph::opset3::Parameter>(ngraph::element::Type_t::f32, ov::Shape{scales.front().size()});
@@ -239,39 +255,153 @@ protected:
             }
             scalesInput = std::make_shared<ngraph::opset3::Constant>(ngraph::element::Type_t::f32, ov::Shape{scales.front().size()}, scales.front());
         }
-        auto axesInput = std::make_shared<ngraph::opset3::Constant>(ngraph::element::Type_t::i64, ov::Shape{axes.size()}, axes);
+        axesInput = std::make_shared<ngraph::opset3::Constant>(ngraph::element::Type_t::i64, ov::Shape{axes.size()}, axes);
 
         for (size_t i = 0; i < params.size(); i++) {
             params[i]->set_friendly_name(std::string("param_") + std::to_string(i));
         }
 
-        ngraph::op::v4::Interpolate::InterpolateAttrs interpAttr{mode, shapeCalcMode, padBegin, padEnd, transfMode, nearMode,
-                                                                            antiAlias, cubeCoef};
-
-        auto interpolate = std::make_shared<ngraph::op::v4::Interpolate>(params[0],
-                                                                         sizesInput,
-                                                                         scalesInput,
-                                                                         axesInput,
-                                                                         interpAttr);
-
-        function = makeNgraphFunction(ngPrc, params, interpolate, "InterpolateCPU");
-
-        // To be able to run CPU tests on all shapes real thresholds should be ignored
-        interpolate->get_rt_info().insert({"enforceAllSupportedLayouts", true});
+        interpAttr = {mode, shapeCalcMode, padBegin, padEnd, transfMode, nearMode, antiAlias, cubeCoef};
 
         if (selectedType.empty()) {
             selectedType = getPrimitiveType();
         }
-        selectedType = makeSelectedTypeStr(selectedType, ngPrc);
+    }
+};
 
-        const auto selLength = selectedType.length();
-        if (selLength > 1 && selectedType[selLength - 2] == 'U' && selectedType[selLength - 1] == '8') {
-            selectedType[selLength - 2] = 'I';
-        }
+class InterpolateLayerCPUTest : public testing::WithParamInterface<InterpolateLayerCPUTestParamsSet>,
+                                public InterpolateLayerCPUTestBase {
+    void SetUp() override {
+        prepare_setup(this->GetParam());
+
+        auto interpolate = make_interpolate(params[0]);
+        function = makeNgraphFunction(ngPrc, params, interpolate, "InterpolateCPU");
+
+        selectedType = makeSelectedTypeStr(selectedType,
+                                           ngPrc == ngraph::element::Type_t::u8 ? ngraph::element::Type_t::i8 : ngPrc);
+
+        // const auto selLength = selectedType.length();
+        // if (selLength > 1 && selectedType[selLength - 2] == 'U' && selectedType[selLength - 1] == '8') {
+        //     selectedType[selLength - 2] = 'I';
+        // }
     }
 };
 
 TEST_P(InterpolateLayerCPUTest, CompareWithRefs) {
+    SKIP_IF_CURRENT_TEST_IS_DISABLED()
+
+    run();
+    CheckPluginRelatedResults(compiledModel, "Interpolate");
+}
+
+
+using InterpolateFusedFakeQuantizeLayerCPUTestParamsSet = std::tuple<InterpolateLayerCPUTestParamsSet,
+                                                                     ElementType>;          // Input precision: u8 or i8
+
+class InterpolateFusedFakeQuantizeLayerCPUTest :
+    public testing::WithParamInterface<InterpolateFusedFakeQuantizeLayerCPUTestParamsSet>,
+    public InterpolateLayerCPUTestBase {
+public:
+    static std::string getTestCaseName(testing::TestParamInfo<InterpolateFusedFakeQuantizeLayerCPUTestParamsSet> obj) {
+        InterpolateLayerCPUTestParamsSet baseParams;
+        ElementType inputType;
+        std::tie(baseParams, inputType) = obj.param;
+        std::ostringstream result;
+        result << InterpolateLayerCPUTestBase::getTestCaseName({baseParams, obj.index});
+        result << "InputType=" << inputType;
+        return result.str();
+    }
+
+protected:
+    void SetUp() override {
+        InterpolateLayerCPUTestParamsSet baseParams;
+        ElementType inputType;
+        std::tie(baseParams, inputType) = this->GetParam();
+        prepare_setup(baseParams);
+
+        // Network precision is ElementType::f32 to be able to run reference calculation
+        // After transformations output precision is always ElementType::u8,
+        // input precision is either ElementType::u8 or ElementType::i8
+        const bool is_i8_input = inputType == ElementType::i8;
+
+        ngraph::Shape newShape(4, 1);
+
+        const std::vector<float> inputLowData = {is_i8_input ? -0.268 : 0.0};
+        const std::vector<float> inputHighData = {is_i8_input ? 0.266 : 1.0};
+        const std::vector<float> outputLowData = {is_i8_input ? -0.268 : 0.0};
+        const std::vector<float> outputHighData = {is_i8_input ? 0.266 : 1.0};
+
+        const auto fq = ngraph::builder::makeFakeQuantize(params[0],
+                                                          ngPrc,
+                                                          256,
+                                                          newShape,
+                                                          inputLowData,
+                                                          inputHighData,
+                                                          outputLowData,
+                                                          outputHighData);
+
+        const auto interpolate = make_interpolate(fq);
+
+        const auto fusedFq = ngraph::builder::makeFakeQuantize(interpolate,
+                                                               ngPrc,
+                                                               256,
+                                                               newShape,
+                                                               inputLowData,
+                                                               inputHighData,
+                                                               outputLowData,
+                                                               outputHighData);
+
+        const std::vector<size_t> filter_shape{1, 1, 1, 11};
+
+        const auto convertConst = ngraph::builder::makeConstant<int8_t>(ngraph::element::Type_t::i8,
+                                                                        filter_shape,
+                                                                        {},
+                                                                        true,
+                                                                        127,
+                                                                        50);
+        const auto convert = std::make_shared<ngraph::opset1::Convert>(convertConst, ngraph::element::Type_t::f32);
+
+
+        const auto multConst = ngraph::builder::makeConstant(ngraph::element::Type_t::f32,
+                                                             std::vector<size_t>{1, 1, 1, 1},
+                                                             std::vector<float>{3e-4},
+                                                             false);
+        const auto mult = ngraph::builder::makeEltwise(convert, multConst, ngraph::helpers::EltwiseTypes::MULTIPLY);
+
+        const ov::Strides strides{1, 1};
+        const ov::CoordinateDiff padBegin{0, 5};
+        const ov::CoordinateDiff padsEnd{0, 5};
+        const ov::Strides dilations{1, 1};
+        const auto auto_pad = ov::op::PadType::EXPLICIT;
+        const auto conv = std::make_shared<ngraph::opset1::Convolution>(fusedFq,
+                                                                        mult,
+                                                                        strides,
+                                                                        padBegin,
+                                                                        padsEnd,
+                                                                        dilations,
+                                                                        auto_pad);
+
+        const auto lastFq = ngraph::builder::makeFakeQuantize(conv,
+                                                              ngPrc,
+                                                              256,
+                                                              newShape,
+                                                              inputLowData,
+                                                              inputHighData,
+                                                              outputLowData,
+                                                              outputHighData);
+
+        function = makeNgraphFunction(ngPrc, params, lastFq, "InterpolateCPU");
+
+        // selectedType is i8 for i8 as well as u8 due to workaround
+        selectedType = makeSelectedTypeStr(selectedType, ngraph::element::Type_t::i8);
+    }
+};
+
+// TODO: Add shape
+// inputShape: {1,1,128,362}, outputShape: {1,1,128,99550}
+// inputPrecision: I8, outputPrecision: I8
+
+TEST_P(InterpolateFusedFakeQuantizeLayerCPUTest, CompareWithRefs) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
 
     run();
