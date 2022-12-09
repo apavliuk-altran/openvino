@@ -1838,8 +1838,10 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
     // const bool allowPlanarI8OrU8 = fusedWith.empty() &&
     // TODO: enable fusing support for all precisons
     const bool allowPlanarI8OrU8 = interpAttrs.mode == InterpolateMode::nearest &&
-                                   ((inputPrecision == Precision::I8 && outputPrecision == Precision::I8) ||
-                                    (inputPrecision == Precision::U8 && outputPrecision == Precision::U8));
+                                //    ((inputPrecision == Precision::I8 && outputPrecision == Precision::I8) ||
+                                //     (inputPrecision == Precision::U8 && outputPrecision == Precision::U8));
+                                   one_of(inputPrecision, Precision::I8, Precision::U8) &&
+                                   one_of(outputPrecision, Precision::I8, Precision::U8);
 
     const auto &dataMinDims = getInputShapeAtPort(DATA_ID).getMinDims();
     const bool isOneChannel = getInputShapeAtPort(DATA_ID).getRank() > 1 &&
@@ -1970,8 +1972,10 @@ void Interpolate::prepareParams() {
         std::shared_ptr<InterpolateExecutor> executor;
         const bool isNearest = key.nodeAttrs.mode == InterpolateMode::nearest;
         const bool isPlanar = key.nodeAttrs.layout == InterpolateLayoutType::planar;
-        const bool isI8OrU8 = (key.nodeAttrs.inPrc == Precision::I8 && key.nodeAttrs.outPrc == Precision::I8) ||
-                              (key.nodeAttrs.inPrc == Precision::U8 && key.nodeAttrs.outPrc == Precision::U8);
+        // const bool isI8OrU8 = (key.nodeAttrs.inPrc == Precision::I8 && key.nodeAttrs.outPrc == Precision::I8) ||
+        //                       (key.nodeAttrs.inPrc == Precision::U8 && key.nodeAttrs.outPrc == Precision::U8);
+        const bool isI8OrU8 = one_of(key.nodeAttrs.inPrc, Precision::I8, Precision::U8) &&
+                              one_of(key.nodeAttrs.outPrc, Precision::I8, Precision::U8);
         const bool allowNearestPlanarForI8OrU8 = isNearest && isPlanar && isI8OrU8;
         const bool allowPlanarForFP32 = key.nodeAttrs.inPrc == Precision::FP32 &&
                                         (mayiuse(cpu::x64::avx2) || (isNearest && isPlanar));
@@ -3232,8 +3236,9 @@ Interpolate::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAtt
     const bool isNearest = jcp.mode == InterpolateMode::nearest;
     // const bool allowI8OrU8 = attr.get()->post_ops_.len() == 0 &&
     const bool allowI8OrU8 = isNearest &&
-                             interpAttrs.inPrc == interpAttrs.outPrc &&
-                             one_of(interpAttrs.inPrc, InferenceEngine::Precision::I8, InferenceEngine::Precision::U8);
+                            //  interpAttrs.inPrc == interpAttrs.outPrc &&
+                             one_of(interpAttrs.inPrc, InferenceEngine::Precision::I8, InferenceEngine::Precision::U8) &&
+                             one_of(interpAttrs.outPrc, InferenceEngine::Precision::I8, InferenceEngine::Precision::U8);
 
     if (jcp.layout != InterpolateLayoutType::planar || allowI8OrU8) {
         if (mayiuse(cpu::x64::avx512_core)) {
