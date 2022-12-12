@@ -516,9 +516,15 @@ const std::vector<double> cubeCoefs = {
 };
 
 const std::vector<fusingSpecificParams> interpolateFusingParamsSet{
-        emptyFusingSpec,
-        fusingSwish,
-        fusingFakeQuantizePerTensorRelu,
+    emptyFusingSpec,
+    fusingSwish,
+    fusingFakeQuantizePerTensorRelu,
+};
+
+const std::vector<fusingSpecificParams> interpolateI8FusingParamsSet{
+    emptyFusingSpec,
+    fusingTanh,
+    fusingAddPerTensor
 };
 
 std::vector<std::map<std::string, std::string>> filterAdditionalConfig() {
@@ -888,7 +894,7 @@ INSTANTIATE_TEST_SUITE_P(InterpolateNearestExt_I8_U8_Layout_Test, InterpolateLay
             ::testing::ValuesIn(shapeParams4D_NearestExt_Full),
             ::testing::Values(ElementType::i8, ElementType::u8),
             ::testing::ValuesIn(filterCPUInfoForDeviceNearestExtI8()),
-            ::testing::Values(emptyFusingSpec),
+            ::testing::ValuesIn(interpolateI8FusingParamsSet),
             ::testing::ValuesIn(filterAdditionalConfigNearestExt())),
     InterpolateLayerCPUTest::getTestCaseName);
 
@@ -1160,7 +1166,7 @@ INSTANTIATE_TEST_SUITE_P(InterpolateNearestExt_5D_I8_U8_Layout_Test, Interpolate
             ::testing::ValuesIn(shapeParams5D_NearestExt_Full),
             ::testing::Values(ElementType::i8, ElementType::u8),
             ::testing::ValuesIn(filterCPUInfoForDevice5DNearestExtI8()),
-            ::testing::Values(emptyFusingSpec),
+            ::testing::ValuesIn(interpolateI8FusingParamsSet),
             ::testing::ValuesIn(filterAdditionalConfigNearestExt())),
     InterpolateLayerCPUTest::getTestCaseName);
 
