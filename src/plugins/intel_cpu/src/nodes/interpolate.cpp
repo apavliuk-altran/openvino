@@ -300,119 +300,85 @@ private:
         const bool can_copy = attr_.post_ops_.len() == 0 && jcp_.src_prc == jcp_.dst_prc;
         const bool native_gather_available = jcp_.src_prc == Precision::FP32 &&
                                              (isa == cpu::x64::avx2 || isa == cpu::x64::avx512_core);
-        int step;
-        // if (can_copy && (jcp_.src_prc == Precision::I8 || jcp_.src_prc == Precision::U8)) {
-        if (can_copy && one_of(jcp_.src_prc, Precision::I8, Precision::U8, Precision::BF16)) {
-            // step = vlen / sizeof(int8_t);
-            step = vlen / jcp_.src_data_size;
-        } else {
-            step = vlen / sizeof(float);
-        }
+        // TODO: remove
+        // int step;
+        // if (can_copy && one_of(jcp_.src_prc, Precision::I8, Precision::U8, Precision::BF16)) {
+        //     step = vlen / jcp_.src_data_size;
+        // } else {
+        //     step = vlen / sizeof(float);
+        // }
+        const int step = vlen / (can_copy ? jcp_.src_data_size : sizeof(float));
 
-        // reg_index_h = index_kernel.data() + oh;
         Xbyak::Reg64 reg_index_h = reg_src_aux1;
-        // Xbyak::Reg64 reg_index_w = reg_src_aux2;
-        // mov(reg_index_h, reg_index);
-        // reg_index represent reg_index_w
-        // add(reg_index, jcp_.OH * jcp_.indices_size);
-        // bk for reset to reg_index_w
-        // mov(reg_index_w, reg_index);
+        mov(reg_work_amount, jcp_.OW);
 
-        // Xbyak::Label out_loop_label;
-        // Xbyak::Label out_loop_end;
+        Xbyak::Reg64 reg_src_h = rsi;
+        mov(reg_src_h, reg_src);
+        mov(reg_index_offset, dword[reg_index_h]);
+        add(reg_src_h, reg_index_offset);
 
-        // Xbyak::Reg64 reg_work_amount_oh = rdi;
-        // mov(reg_work_amount_oh, jcp_.OH);
+        Xbyak::Label nn_loop_label;
+        Xbyak::Label nn_loop_end_label;
+        Xbyak::Label nn_tail_loop_label;
+        Xbyak::Label nn_tail_loop_end_label;
 
-        // L(out_loop_label);
-        // {
-            // outloop status
-            // cmp(reg_work_amount_oh, 1);
-            // jl(out_loop_end, T_NEAR);
+        L(nn_loop_label);
+        {
+            cmp(reg_work_amount, step);
+            jl(nn_loop_end_label, T_NEAR);
 
-            //reset work_amount to OW
-            mov(reg_work_amount, jcp_.OW);
-
-            Xbyak::Reg64 reg_src_h = rsi;
-            mov(reg_src_h, reg_src);
-            // index_h * IW * dataSize done when built to avoid redundent compute
-            mov(reg_index_offset, dword[reg_index_h]);
-            add(reg_src_h, reg_index_offset);  // reg_src_h now point to begin of row
-
-            // reset index_w, index_w * dataSize done when built to avoid redundent compute
-            // mov(reg_index, reg_index_w);
-
-            Xbyak::Label nn_loop_label;
-            Xbyak::Label nn_loop_end_label;
-            Xbyak::Label nn_tail_loop_label;
-            Xbyak::Label nn_tail_loop_end_label;
-
-            L(nn_loop_label);   // inner loop
-            {
-                cmp(reg_work_amount, step);
-                jl(nn_loop_end_label, T_NEAR);
-
-                if (can_copy && !native_gather_available) {
-                    gather_i32_indices_store(reg_dst, reg_src_h, reg_index, jcp_.src_prc, step);
-                } else if (jcp_.src_prc == Precision::FP32 || jcp_.src_prc == Precision::I32) {
+            if (can_copy && !native_gather_available) {
+                gather_i32_indices_store(reg_dst, reg_src_h, reg_index, jcp_.src_prc, step);
+            } else {
+                if (jcp_.src_prc == Precision::FP32 || jcp_.src_prc == Precision::I32) {
                     uni_vmovdqu(vmm_index, ptr[reg_index]);
                     gather_i32_indices(vmm_val, reg_src_h, 0, vmm_index, 1, jcp_.src_prc, false, false);
-                    if (attr_.post_ops_.len() != 0) {
-                        apply_post_ops(jcp_.dst_prc, 1);
-                    }
-                    store(vmm_val, reg_dst, step);
                 } else {
                     gather_i32_indices_store(reg_dst, reg_src_h, reg_index, jcp_.src_prc, step);
                     load(reg_dst, vmm_val, step);
-                    if (attr_.post_ops_.len() != 0) {
-                        apply_post_ops(jcp_.dst_prc, 1);
-                    }
-                    store(vmm_val, reg_dst, step);
                 }
-                add(reg_dst, step * jcp_.dst_data_size);
-                add(reg_index, step * jcp_.indices_size);
-                sub(reg_work_amount, step);
-
-                jmp(nn_loop_label, T_NEAR);
-            }
-            L(nn_loop_end_label);
-
-            if (can_copy) {
-                const int tail_count = jcp_.OW % step;
-                gather_i32_indices_store(reg_dst, reg_src_h, reg_index, jcp_.src_prc, tail_count);
-                add(reg_dst, tail_count * jcp_.dst_data_size);
-                add(reg_index, tail_count * jcp_.indices_size);
-            } else {
-                L(nn_tail_loop_label);
-                {
-                    cmp(reg_work_amount, 1);
-                    jl(nn_tail_loop_end_label, T_NEAR);
-
-                    mov(reg_src_aux, reg_src_h);
-                    mov(reg_index_offset, dword[reg_index]);
-                    add(reg_src_aux, reg_index_offset);
-
-                    load(reg_src_aux, vmm_val, scalar_step);
-                    if (attr_.post_ops_.len() != 0) {
-                        apply_post_ops(jcp_.dst_prc, 1);
-                    }
-                    store(vmm_val, reg_dst, scalar_step);
-
-                    add(reg_dst, scalar_step * jcp_.dst_data_size);
-                    add(reg_index, scalar_step * jcp_.indices_size);
-                    sub(reg_work_amount, scalar_step);
-
-                    jmp(nn_tail_loop_label, T_NEAR);
+                if (attr_.post_ops_.len() != 0) {
+                    apply_post_ops(jcp_.dst_prc, 1);
                 }
-                L(nn_tail_loop_end_label);    // inner loop end
+                store(vmm_val, reg_dst, step);
             }
-            //increment index_h to next row
-            // add(reg_index_h, jcp_.indices_size);
+            add(reg_dst, step * jcp_.dst_data_size);
+            add(reg_index, step * jcp_.indices_size);
+            sub(reg_work_amount, step);
 
-            // sub(reg_work_amount_oh, 1);
-            // jmp(out_loop_label, T_NEAR);
-        // }
-        // L(out_loop_end);
+            jmp(nn_loop_label, T_NEAR);
+        }
+        L(nn_loop_end_label);
+
+        if (can_copy) {
+            const int tail_count = jcp_.OW % step;
+            gather_i32_indices_store(reg_dst, reg_src_h, reg_index, jcp_.src_prc, tail_count);
+            add(reg_dst, tail_count * jcp_.dst_data_size);
+            add(reg_index, tail_count * jcp_.indices_size);
+        } else {
+            L(nn_tail_loop_label);
+            {
+                cmp(reg_work_amount, 1);
+                jl(nn_tail_loop_end_label, T_NEAR);
+
+                mov(reg_src_aux, reg_src_h);
+                mov(reg_index_offset, dword[reg_index]);
+                add(reg_src_aux, reg_index_offset);
+
+                load(reg_src_aux, vmm_val, scalar_step);
+                if (attr_.post_ops_.len() != 0) {
+                    apply_post_ops(jcp_.dst_prc, 1);
+                }
+                store(vmm_val, reg_dst, scalar_step);
+
+                add(reg_dst, scalar_step * jcp_.dst_data_size);
+                add(reg_index, scalar_step * jcp_.indices_size);
+                sub(reg_work_amount, scalar_step);
+
+                jmp(nn_tail_loop_label, T_NEAR);
+            }
+            L(nn_tail_loop_end_label);
+        }
     }
 
     void nn_blk() {
@@ -453,7 +419,6 @@ private:
         L(nn_loop_end_label);
     }
 
-    // TODO: investigate if kernel may be optimized, e.g. by disabling conversion for unfused operations
     void nn_by_channel() {
         // kernel for C * OW
         Xbyak::Label out_loop_label;
@@ -1361,28 +1326,12 @@ private:
      * @param dest_addr Register with the start destination address
      * @param source_addr Register with the start source address
      * @param ind_addr Register with the start index address
-     * @param is_scalar Flag to perform scalar operation instead of vector
+     * @param prc Source/destination precision
+     * @param gather_num Number of elements to process
      * @return none.
      */
     inline void gather_i32_indices_store(const Xbyak::Reg64 &dest_addr, const Xbyak::Reg64 &source_addr,
                                          const Xbyak::Reg64 &ind_addr, Precision prc, int gather_num) {
-        // for (size_t i = 0; i < gather_num; ++i) {
-        //     if (prc == Precision::FP32) {
-        //         mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
-        //         mov(reg_tmp_64.cvt32(), ptr[source_addr + reg_tmp_64]);
-        //         mov(ptr[dest_addr + i * prc.size()], reg_tmp_64.cvt32());
-        //     } else if (prc == Precision::BF16) {
-        //         mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
-        //         mov(reg_tmp_64.cvt16(), ptr[source_addr + reg_tmp_64]);
-        //         mov(ptr[dest_addr + i * prc.size()], reg_tmp_64.cvt16());
-        //     } else if (prc == Precision::I8 || prc == Precision::U8) {
-        //         mov(reg_tmp_64.cvt32(), ptr[ind_addr + i * sizeof(int32_t)]);
-        //         mov(reg_tmp_64.cvt8(), ptr[source_addr + reg_tmp_64]);
-        //         mov(ptr[dest_addr + i], reg_tmp_64.cvt8());
-        //     } else {
-        //         IE_THROW() << "Unsupported precision";
-        //     }
-
         for (size_t i = 0; i < gather_num; ++i) {
             const auto scr_ptr = ptr[source_addr + reg_tmp_64];
             const auto dst_ptr = ptr[dest_addr + i * prc.size()];
@@ -1405,27 +1354,6 @@ private:
                     IE_THROW() << "Unsupported precision";
             }
         }
-
-        // Reg reg_tmp;
-        // switch (prc) {
-        //     case Precision::FP32:
-        //         reg_tmp = reg_tmp_64.cvt32();
-        //         break;
-        //     case Precision::BF16:
-        //         reg_tmp = reg_tmp_64.cvt16();
-        //         break;
-        //     case Precision::I8:
-        //     case Precision::U8:
-        //         reg_tmp = reg_tmp_64.cvt8();
-        //         break;
-        //     default:
-        //         IE_THROW() << "Unsupported precision";
-        // }
-        // for (size_t i = 0; i < gather_num; ++i) {
-        //     mov(reg_tmp, ptr[ind_addr + i * sizeof(int32_t)]);
-        //     mov(reg_tmp_64.cvt32(), ptr[source_addr + reg_tmp_64]);
-        //     mov(ptr[dest_addr + i * prc.size()], reg_tmp);
-        // }
     }
 
     // is_broadcast for broadcasting param for depth_wise and quantize(channel-sensitive post-ops), for fusion with plain layout.
@@ -1878,27 +1806,20 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
         implType = impl_desc_type::ref;
     }
 
+    const bool isNearest = interpAttrs.mode == InterpolateMode::nearest;
+
     // planar layout supported:
     // 1. for ref on machine without sse41 (if no sse41, canFuse() is false)
     // 2. JIT kernel for f32 && avx2(gather) (with fuse) - for all modes
     // 3. JIT kernel for f32/i8/u8/bf16 with sse41 or above for nearest mode
-    const bool allowPlanarFp32 = inputPrecision == Precision::FP32 && (mayiuse(cpu::x64::avx2) ||
-                                                                       interpAttrs.mode == InterpolateMode::nearest);
-    // const bool allowPlanarI8OrU8 = fusedWith.empty() &&
-    // TODO: enable fusing support for all precisons
-    const bool allowNearestPlanarNative = interpAttrs.mode == InterpolateMode::nearest &&
-                                //    ((inputPrecision == Precision::I8 && outputPrecision == Precision::I8) ||
-                                //     (inputPrecision == Precision::U8 && outputPrecision == Precision::U8));
-                                   one_of(inputPrecision, Precision::I8, Precision::U8, inputPrecision == Precision::BF16) &&
-                                   one_of(outputPrecision, Precision::I8, Precision::U8, inputPrecision == Precision::BF16);
-
+    const bool allowPlanarFp32 = inputPrecision == Precision::FP32 && mayiuse(cpu::x64::avx2);
 
     const auto &dataMinDims = getInputShapeAtPort(DATA_ID).getMinDims();
     const bool isOneChannel = getInputShapeAtPort(DATA_ID).getRank() > 1 &&
                               dataMinDims[1] != Shape::UNDEFINED_DIM &&
                               dataMinDims[1] == 1;
 
-    const bool isPlanarApplied = allowPlanarFp32 || allowNearestPlanarNative || enforceAllSupportedLayouts;
+    const bool isPlanarApplied = allowPlanarFp32 || isNearest || enforceAllSupportedLayouts;
     const bool isBlkApplied = !isOneChannel || enforceAllSupportedLayouts;
     // TODO: Enable conditioned by-channel layout, e.g. regarding threshold based on the number of channels
     const bool isByChannelApplied = true;
@@ -1916,7 +1837,7 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
             }
         }
         if (isPlanarApplied) {
-            if (allowPlanarFp32 && mayiuse(cpu::x64::avx512_core)) {
+            if (allowPlanarFp32 && mayiuse(cpu::x64::avx512_core) && !isNearest) {
                 implType = impl_desc_type::jit_avx2;
             }
             pushDesc(LayoutType::ncsp, implType);
@@ -2020,17 +1941,12 @@ void Interpolate::prepareParams() {
 
     auto buildExecutor = [&](const InterpolateKey& key) -> std::shared_ptr<InterpolateExecutor> {
         std::shared_ptr<InterpolateExecutor> executor;
-        const bool isNearest = key.nodeAttrs.mode == InterpolateMode::nearest;
         const bool isPlanar = key.nodeAttrs.layout == InterpolateLayoutType::planar;
-        // const bool isI8OrU8 = (key.nodeAttrs.inPrc == Precision::I8 && key.nodeAttrs.outPrc == Precision::I8) ||
-        //                       (key.nodeAttrs.inPrc == Precision::U8 && key.nodeAttrs.outPrc == Precision::U8);
-        const bool isI8OrU8OrBF16 = one_of(key.nodeAttrs.inPrc, Precision::I8, Precision::U8, Precision::BF16) &&
-                                    one_of(key.nodeAttrs.outPrc, Precision::I8, Precision::U8, Precision::BF16);
-        const bool allowNearestPlanarNative = isNearest && isPlanar && isI8OrU8OrBF16;
-        const bool allowPlanarForFP32 = key.nodeAttrs.inPrc == Precision::FP32 &&
-                                        (mayiuse(cpu::x64::avx2) || (isNearest && isPlanar));
+        const bool isNearestPlanar = isPlanar && key.nodeAttrs.mode == InterpolateMode::nearest;
         if (one_of(key.nodeAttrs.mode, InterpolateMode::nearest, InterpolateMode::linear_onnx, InterpolateMode::cubic) &&
-            ((!isPlanar && mayiuse(cpu::x64::sse41)) || allowPlanarForFP32 || allowNearestPlanarNative)) {
+            ((!isPlanar && mayiuse(cpu::x64::sse41)) ||
+           ((mayiuse(cpu::x64::avx2) && key.nodeAttrs.inPrc == Precision::FP32)) ||
+            isNearestPlanar)) {
             executor = std::make_shared<InterpolateJitExecutor>(key.nodeAttrs,
                                                                key.srcDims,
                                                                key.dstDims,
@@ -2285,25 +2201,18 @@ void Interpolate::InterpolateJitExecutor::NNCGathered(const uint8_t *in_ptr_, ui
 
 void Interpolate::InterpolateJitExecutor::NNPlanar(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
                                                              int B, int C, int ID, int IH, int IW, int OD, int OH, int OW) {
-    // std::cout << "*********************************************************************\n";
-    // std::cout << "NNPlanar()";
-    // std::cout << "*********************************************************************\n";
-
     int *index_d = static_cast<int*>(&indexTable[0]);
     int *index_h = static_cast<int*>(&indexTable[OD]);
     int *index_w = static_cast<int*>(&indexTable[OD + OH]);
 
     std::vector<int> index_kernel(OH + OW);
-    // index_h * IW * srcDataSize to reduce and simplify redundant compute
     for (int oh = 0; oh < OH; oh++) {
         index_kernel[oh] = index_h[oh] * IW * srcDataSize;
     }
-    // index_w * srcDataSize
     for (int ow = 0; ow < OW; ow++) {
         index_kernel[OH + ow] = index_w[ow] * srcDataSize;
     }
 
-    // TODO: investigate if parallel_for4d() would increase performance, especially for 1 channel
     parallel_for4d(B, C, OD, OH, [&](size_t b, size_t c, size_t od, size_t oh) {
         const uint8_t *in_ptr = in_ptr_ + (IW * IH * ID * C * b + IW * IH * ID * c + IW * IH * index_d[od]) * srcDataSize;
         uint8_t *out_ptr = out_ptr_ + (OW * OH * OD * C * b + OW * OH * OD * c + OW * OH * od) * dstDataSize
@@ -2312,12 +2221,8 @@ void Interpolate::InterpolateJitExecutor::NNPlanar(const uint8_t *in_ptr_, uint8
         auto arg = jit_interpolate_call_args();
         arg.src_ptr[0] = in_ptr;
         arg.dst = out_ptr;
-        // arg.index = static_cast<int*>(&index_kernel[0]);  // need index_h and index_w in kernel, it's in continous memory so one param
         arg.index = index_kernel.data() + OH;
         arg.weight_ptr[0] = index_kernel.data() + oh;
-        // work_amount is OH(out loop) and OW(inner loop), can get in kernel from jcp.
-        // TODO: workaround!
-        // arg.work_amount = oh;
         arg.oc_off = static_cast<size_t>(c * sizeof(float));
         arg.post_op_data = post_ops_data_;
         (*interpolateKernel)(&arg);
@@ -3283,20 +3188,7 @@ Interpolate::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAtt
     jcp.spatial_dim_size = getSpatialDimsNum(srcDims.size());
     jcp.layout = interpAttrs.layout;
 
-    const bool isNearest = jcp.mode == InterpolateMode::nearest;
-    // const bool allowI8OrU8 = attr.get()->post_ops_.len() == 0 &&
-    const bool allowNearestNative = isNearest &&
-                                    //  interpAttrs.inPrc == interpAttrs.outPrc &&
-                                    one_of(interpAttrs.inPrc,
-                                           InferenceEngine::Precision::I8,
-                                           InferenceEngine::Precision::U8,
-                                           InferenceEngine::Precision::BF16) &&
-                                    one_of(interpAttrs.outPrc,
-                                           InferenceEngine::Precision::I8,
-                                           InferenceEngine::Precision::U8,
-                                           InferenceEngine::Precision::BF16);
-
-    if (jcp.layout != InterpolateLayoutType::planar || allowNearestNative) {
+    if (jcp.layout != InterpolateLayoutType::planar || jcp.mode == InterpolateMode::nearest) {
         if (mayiuse(cpu::x64::avx512_core)) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::avx512_core>(jcp, *attr.get()));
         } else if (mayiuse(cpu::x64::avx2)) {
@@ -3307,8 +3199,6 @@ Interpolate::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAtt
     } else if (interpAttrs.inPrc == InferenceEngine::Precision::FP32) {
         if (mayiuse(cpu::x64::avx2)) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::avx2>(jcp, *attr.get()));
-        } else if (mayiuse(cpu::x64::sse41) && isNearest) {
-            interpolateKernel.reset(new jit_uni_interpolate_kernel_t<cpu::x64::sse41>(jcp, *attr.get()));
         }
     } else {
         IE_THROW() << "Can't create InterpolateJitExecutor";
