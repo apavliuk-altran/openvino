@@ -114,7 +114,7 @@ public:
             ov::Tensor tensor;
 
             if (i == 1) {
-                if (shapeCalcMode == ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES) {
+                if (interpAttr.shape_calculation_mode == ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES) {
                     tensor = ov::Tensor(funcInput.get_element_type(), targetInputStaticShapes[i], sizes[inferRequestNum].data());
                 } else {
                     tensor = ov::Tensor(funcInput.get_element_type(), targetInputStaticShapes[i], scales[inferRequestNum].data());
@@ -153,28 +153,27 @@ public:
     }
 
 protected:
-    std::vector<std::vector<float>> scales;
-    std::vector<std::vector<int32_t>> sizes;
-    ngraph::op::v4::Interpolate::ShapeCalcMode shapeCalcMode;
-    size_t inferRequestNum = 0;
-
     ElementType ngPrc;
-    ngraph::ParameterVector params;
+    ngraph::op::v4::Interpolate::InterpolateAttrs interpAttr;
+    std::vector<std::vector<int32_t>> sizes;
     std::shared_ptr<ov::Node> sizesInput;
+    std::vector<std::vector<float>> scales;
     std::shared_ptr<ov::Node> scalesInput;
     std::shared_ptr<ov::Node> axesInput;
-    ngraph::op::v4::Interpolate::InterpolateAttrs interpAttr;
+    ngraph::ParameterVector params;
+    size_t inferRequestNum = 0;
 
-    std::shared_ptr<ngraph::op::v4::Interpolate> make_interpolate(const std::shared_ptr<ov::Node>& node) {
-        auto interpolate = std::make_shared<ngraph::op::v4::Interpolate>(node,
-                                                                         sizesInput,
-                                                                         scalesInput,
-                                                                         axesInput,
-                                                                         interpAttr);
-
+    static void add_rt_info(const std::shared_ptr<ngraph::op::v4::Interpolate>& interpolate) {
         // To be able to run CPU tests for all layouts
         interpolate->get_rt_info().insert({"enforceAllSupportedLayouts", true});
-        return interpolate;
+    }
+
+    std::shared_ptr<ngraph::op::v4::Interpolate> make_interpolate(const std::shared_ptr<ov::Node>& node) {
+        return std::make_shared<ngraph::op::v4::Interpolate>(node,
+                                                             sizesInput,
+                                                             scalesInput,
+                                                             axesInput,
+                                                             interpAttr);
      }
 
     void prepare_setup(const InterpolateLayerCPUTestParamsSet& paramsSet) {
@@ -200,6 +199,7 @@ protected:
         double cubeCoef;
         std::tie(mode, transfMode, nearMode, antiAlias, padBegin, padEnd, cubeCoef) = specificParams;
 
+        ngraph::op::v4::Interpolate::ShapeCalcMode shapeCalcMode;
         InputShape dataShape;
         ngraph::helpers::InputLayerType shapeInputType;
         std::vector<std::vector<float>> shapeDataForInput;
@@ -277,6 +277,8 @@ class InterpolateLayerCPUTest : public testing::WithParamInterface<InterpolateLa
         auto interpolate = make_interpolate(params[0]);
         function = makeNgraphFunction(ngPrc, params, interpolate, "InterpolateCPU");
 
+        add_rt_info(interpolate);
+
         selectedType = makeSelectedTypeStr(selectedType,
                                            ngPrc == ngraph::element::Type_t::u8 ? ngraph::element::Type_t::i8 : ngPrc);
 
@@ -296,7 +298,7 @@ TEST_P(InterpolateLayerCPUTest, CompareWithRefs) {
 
 
 using InterpolateFusedFakeQuantizeLayerCPUTestParamsSet = std::tuple<InterpolateLayerCPUTestParamsSet,
-                                                                     ElementType>;          // Input precision: u8 or i8
+                                                                     ElementType>;          // Input type: u8 or i8
 
 class InterpolateFusedFakeQuantizeLayerCPUTest :
     public testing::WithParamInterface<InterpolateFusedFakeQuantizeLayerCPUTestParamsSet>,
@@ -308,7 +310,7 @@ public:
         std::tie(baseParams, inputType) = obj.param;
         std::ostringstream result;
         result << InterpolateLayerCPUTestBase::getTestCaseName({baseParams, obj.index});
-        result << "InputType=" << inputType;
+        result << "_inputType=" << inputType;
         return result.str();
     }
 
@@ -392,14 +394,12 @@ protected:
 
         function = makeNgraphFunction(ngPrc, params, lastFq, "InterpolateCPU");
 
+        add_rt_info(interpolate);
+
         // selectedType is i8 for i8 as well as u8 due to workaround
         selectedType = makeSelectedTypeStr(selectedType, ngraph::element::Type_t::i8);
     }
 };
-
-// TODO: Add shape
-// inputShape: {1,1,128,362}, outputShape: {1,1,128,99550}
-// inputPrecision: I8, outputPrecision: I8
 
 TEST_P(InterpolateFusedFakeQuantizeLayerCPUTest, CompareWithRefs) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
@@ -407,6 +407,14 @@ TEST_P(InterpolateFusedFakeQuantizeLayerCPUTest, CompareWithRefs) {
     run();
     CheckPluginRelatedResults(compiledModel, "Interpolate");
 }
+
+// TODO:
+// - Fusings
+// - BF16
+// - ALL ISA
+// - NCHW format for AVX152
+// - Testing
+
 
 namespace {
 
@@ -449,6 +457,20 @@ std::vector<CPUSpecificParams> filterCPUInfoForDeviceNearestExtI8() {
         return resCPUParams;
     } else if (InferenceEngine::with_cpu_x86_sse42()) {
         resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_sse42"}, "jit_sse42"});
+    }
+    return resCPUParams;
+}
+
+std::vector<CPUSpecificParams> filterCPUInfoForDeviceNearestExtFusedFQ() {
+    std::vector<CPUSpecificParams> resCPUParams;
+    if (InferenceEngine::with_cpu_x86_avx512f()) {
+        resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
+    } else if (InferenceEngine::with_cpu_x86_avx2()) {
+        resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_avx2"}, "jit_avx2"});
+    } else if (InferenceEngine::with_cpu_x86_sse42()) {
+        resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"jit_sse42"}, "jit_sse42"});
+    } else {
+        resCPUParams.push_back(CPUSpecificParams{{nchw, x, x, x}, {nchw}, {"ref"}, "ref"});
     }
     return resCPUParams;
 }
@@ -1179,8 +1201,77 @@ INSTANTIATE_TEST_SUITE_P(smoke_Interpolate_corner_Layout_Test, InterpolateLayerC
             ::testing::ValuesIn(filterAdditionalConfig())),
     InterpolateLayerCPUTest::getTestCaseName);
 
+
+// Fused FakeQuantize
+const std::vector<size_t> pads_FusedFQ = {0, 0, 0, 0};
+
+const auto interpolateCasesNearestExt4D_FusedFQ = ::testing::Combine(
+        ::testing::Values(ngraph::op::v4::Interpolate::InterpolateMode::NEAREST),
+        ::testing::Values(ngraph::op::v4::Interpolate::CoordinateTransformMode::ASYMMETRIC),
+        ::testing::Values(ngraph::op::v4::Interpolate::NearestMode::FLOOR),
+        ::testing::ValuesIn(antialias),
+        ::testing::Values(pads_FusedFQ),
+        ::testing::Values(pads_FusedFQ),
+        ::testing::ValuesIn(cubeCoefs));
+
+const std::vector<ShapeParams> shapeParams4D_NearestExt_FusedFQ_01 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,
+        InputShape{{1, 1, 80, 366}, {{1, 1, 80, 366}}},
+        ngraph::helpers::InputLayerType::CONSTANT,
+        {{1, 1, 80, 1830}},
+        defaultAxes4D.front()
+    }
+};
+
+const auto inputType_FusedFQ_01 = ElementType::u8;
+
+INSTANTIATE_TEST_SUITE_P(InterpolateNearestExt_4D_FusedFQ_Layout_Test_01, InterpolateFusedFakeQuantizeLayerCPUTest,
+        ::testing::Combine(
+            ::testing::Combine(
+                interpolateCasesNearestExt4D_FusedFQ,
+                ::testing::ValuesIn(shapeParams4D_NearestExt_FusedFQ_01),
+                ::testing::Values(ElementType::f32),
+                ::testing::ValuesIn(filterCPUInfoForDeviceNearestExtFusedFQ()),
+                ::testing::Values(emptyFusingSpec),     // Fusing is performed via subgraph generated in the test class
+                ::testing::ValuesIn(filterAdditionalConfigNearestExt())),
+            ::testing::Values(inputType_FusedFQ_01)),
+    InterpolateFusedFakeQuantizeLayerCPUTest::getTestCaseName);
+
+const std::vector<ShapeParams> shapeParams4D_NearestExt_FusedFQ_02 = {
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,
+        InputShape{{1, 1, 80, 1830}, {{1, 1, 80, 1830}}},
+        ngraph::helpers::InputLayerType::CONSTANT,
+        {{1, 1, 80, 9150}},
+        defaultAxes4D.front()
+    },
+    ShapeParams{
+        ngraph::op::v4::Interpolate::ShapeCalcMode::SIZES,
+        InputShape{{1, 1, 80, 9150}, {{1, 1, 80, 9150}}},
+        ngraph::helpers::InputLayerType::CONSTANT,
+        {{1, 1, 80, 100650}},
+        defaultAxes4D.front()
+    }
+};
+
+const auto inputType_FusedFQ_02 = ElementType::i8;
+
+INSTANTIATE_TEST_SUITE_P(InterpolateNearestExt_4D_FusedFQ_Layout_Test_02, InterpolateFusedFakeQuantizeLayerCPUTest,
+        ::testing::Combine(
+            ::testing::Combine(
+                interpolateCasesNearestExt4D_FusedFQ,
+                ::testing::ValuesIn(shapeParams4D_NearestExt_FusedFQ_02),
+                ::testing::Values(ElementType::f32),
+                ::testing::ValuesIn(filterCPUInfoForDeviceNearestExtFusedFQ()),
+                ::testing::Values(emptyFusingSpec),     // Fusing is performed via subgraph generated in the test class
+                ::testing::ValuesIn(filterAdditionalConfigNearestExt())),
+            ::testing::Values(inputType_FusedFQ_02)),
+    InterpolateFusedFakeQuantizeLayerCPUTest::getTestCaseName);
+
 } // namespace
 
+/*
 ////////////////////////Benchmark/////////////////////////////
 namespace benchmark {
 
@@ -1773,5 +1864,6 @@ INSTANTIATE_TEST_SUITE_P(Interpolate_I8_CPU_Test_14, InterpolateFusedFakeQuantiz
     InterpolateFusedFakeQuantizeLayerCPUTest::getTestCaseName);
 
 }  // namespace benchmark
+*/
 
 } // namespace CPULayerTestsDefinitions
