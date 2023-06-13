@@ -22,7 +22,7 @@ std::vector<std::string> disabledTestPatterns() {
             R"(.*(QuantGroupConvBackpropData3D).*)",
 
             // These tests might fail due to accuracy loss a bit bigger than threshold
-            R"(.*(GRUCellTest).*)",
+            // R"(.*(GRUCellTest).*)",
             R"(.*(RNNSequenceTest).*)",
             R"(.*(GRUSequenceTest).*)",
             // These test cases might fail due to FP16 overflow
