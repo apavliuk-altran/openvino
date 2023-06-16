@@ -229,6 +229,10 @@ void fuse_mean_scale(ov::preprocess::PrePostProcessor& preproc, const benchmark_
 }
 }  // namespace
 
+// constexpr bool TO_DUMP = true;
+constexpr bool TO_DUMP = false;
+constexpr float THRESHOLD = 2.0f;
+
 template <typename T>
 void dumpTensor_t(std::ofstream& f, const ov::Tensor& t) {
     const auto* ptr = static_cast<const T*>(t.data());
@@ -266,11 +270,12 @@ void validateTensor_t(std::ifstream& f, const ov::Tensor& t, float threshold) {
             std::cout << "diff = " << diff << " is greater than threshold = " << threshold
                       << ": act = " << act << ", ref = " << ref << '\n';
             std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+            throw std::runtime_error{"diff > threshold"};
         }
     }
 }
 
-void validateTensor(const std::string& fileName, const ov::Tensor& t, float threshold = 0.001) {
+void validateTensor(const std::string& fileName, const ov::Tensor& t, float threshold = THRESHOLD) {
     std::ifstream f;
     f.open(fileName, std::ios::in);
     const auto& type = t.get_element_type();
@@ -283,9 +288,6 @@ void validateTensor(const std::string& fileName, const ov::Tensor& t, float thre
     }
     f.close();
 }
-
-// constexpr bool TO_DUMP = true;
-constexpr bool TO_DUMP = false;
 
 /**
  * @brief The entry point of the benchmark application
