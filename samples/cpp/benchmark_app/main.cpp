@@ -229,10 +229,73 @@ void fuse_mean_scale(ov::preprocess::PrePostProcessor& preproc, const benchmark_
 }
 }  // namespace
 
+template <typename T>
+void dumpTensor_t(std::ofstream& f, const ov::Tensor& t) {
+    const auto* ptr = static_cast<const T*>(t.data());
+    for (size_t i = 0; i < t.get_size(); ++i){
+        f << static_cast<float>(ptr[i]) << ' ';
+    }
+    f << '\n';
+}
+
+void dumpTensor(const std::string& fileName, const ov::Tensor& t) {
+    std::ofstream f;
+    f.open(fileName, std::ios::trunc);
+    const auto& type = t.get_element_type();
+    if (type == ov::element::Type_t::f32) {
+        dumpTensor_t<float>(f, t);
+    } else if (type == ov::element::Type_t::u8) {
+        dumpTensor_t<uint8_t>(f, t);
+    } else {
+        throw std::runtime_error("Unsupported type: " + type.get_type_name());
+    }
+    f.close();
+}
+
+template <typename T>
+void validateTensor_t(std::ifstream& f, const ov::Tensor& t, float threshold) {
+    const auto* ptr = static_cast<const T*>(t.data());
+    std::cout << "ptr = " << static_cast<const void*>(ptr) << '\n';
+    float ref;
+    for (size_t i = 0; i < t.get_size(); ++i){
+        const auto act = static_cast<float>(ptr[i]);
+        f >> ref;
+        const float diff = std::abs(act - ref);
+        if (diff > threshold) {
+            std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+            std::cout << "diff = " << diff << " is greater than threshold = " << threshold
+                      << ": act = " << act << ", ref = " << ref << '\n';
+            std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+        }
+    }
+}
+
+void validateTensor(const std::string& fileName, const ov::Tensor& t, float threshold = 0.001) {
+    std::ifstream f;
+    f.open(fileName, std::ios::in);
+    const auto& type = t.get_element_type();
+    if (type == ov::element::Type_t::f32) {
+        validateTensor_t<float>(f, t, threshold);
+    } else if (type == ov::element::Type_t::u8) {
+        validateTensor_t<uint8_t>(f, t, threshold);
+    } else {
+        throw std::runtime_error("Unsupported type: " + type.get_type_name());
+    }
+    f.close();
+}
+
+// constexpr bool TO_DUMP = true;
+constexpr bool TO_DUMP = false;
+
 /**
  * @brief The entry point of the benchmark application
  */
 int main(int argc, char* argv[]) {
+
+    std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+    std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+    std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+
     std::shared_ptr<StatisticsReport> statistics;
     try {
         ov::CompiledModel compiledModel;
@@ -1112,6 +1175,9 @@ int main(int argc, char* argv[]) {
         /** Start inference & calculate performance **/
         /** to align number if iterations to guarantee that last infer requests are
          * executed in the same conditions **/
+        
+        std::vector<InferReqWrap::Ptr> allIRs(niter);
+
         while ((niter != 0LL && iteration < niter) ||
                (duration_nanoseconds != 0LL && (uint64_t)execTime < duration_nanoseconds) ||
                (FLAGS_api == "async" && iteration % nireq != 0)) {
@@ -1119,6 +1185,27 @@ int main(int argc, char* argv[]) {
             if (!inferRequest) {
                 OPENVINO_THROW("No idle Infer Requests!");
             }
+
+            allIRs[iteration] = inferRequest;
+
+            std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+            auto inputs = app_inputs_info[iteration % app_inputs_info.size()];
+            std::cout << "Dumping inputs, IR #" << std::to_string(iteration) << '\n';
+            size_t i = 0;
+            for (auto& item : inputs) {
+                auto inputName = item.first;
+                const auto& data = inputsData.at(inputName)[iteration % inputsData.at(inputName).size()];
+
+                std::string fName = std::string{"ref_input0"} + std::to_string(i) + '_' + inputName + ".txt";
+                if (TO_DUMP) {
+                    dumpTensor(fName, data);
+                } else {
+                    validateTensor(fName, data);
+                }
+
+                ++i;
+            }
+            std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
 
             if (!inferenceOnly) {
                 auto inputs = app_inputs_info[iteration % app_inputs_info.size()];
@@ -1134,6 +1221,7 @@ int main(int argc, char* argv[]) {
                 for (auto& item : inputs) {
                     auto inputName = item.first;
                     const auto& data = inputsData.at(inputName)[iteration % inputsData.at(inputName).size()];
+
                     inferRequest->set_tensor(inputName, data);
                 }
 
@@ -1159,6 +1247,28 @@ int main(int argc, char* argv[]) {
 
         // wait the latest inference executions
         inferRequestsQueue.wait_all();
+
+        size_t n = 0;
+        // for (auto&& ir : inferRequestsQueue.requests) {
+        for (auto&& ir : allIRs) {
+            std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+            std::cout << "Dumping outputs, IR #" << std::to_string(n) << '\n';
+            size_t i = 0;
+            for (auto& output : compiledModel.outputs()) {
+                const auto& outputName = output.get_any_name();
+                const std::string fName = std::string{"ref_output0"} + std::to_string(i) + '_' + outputName + ".txt";
+                const auto& t = ir->get_tensor(outputName);
+                if (TO_DUMP) {
+                    dumpTensor(fName, t);
+                } else {
+                    validateTensor(fName, t);
+                }
+                ++i;
+            }
+            std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
+            ++n;
+        }
+        allIRs.clear();
 
         LatencyMetrics generalLatency(inferRequestsQueue.get_latencies(), "", FLAGS_latency_percentile);
         std::vector<LatencyMetrics> groupLatencies = {};
