@@ -89,7 +89,8 @@ void DetectionOutputLayerTest::GenerateInputs() {
         }
         blob = make_blob_with_precision(info->getTensorDesc());
         blob->allocate();
-        ov::test::utils::fill_data_random_float<InferenceEngine::Precision::FP32>(blob, range, 0, resolution);
+        // ov::test::utils::fill_data_random_float<InferenceEngine::Precision::FP32>(blob, range, 0, resolution);
+        ov::test::utils::fill_data_random_float<InferenceEngine::Precision::FP16>(blob, range, 0, resolution);
         inputs.push_back(blob);
         it++;
     }
@@ -98,6 +99,14 @@ void DetectionOutputLayerTest::GenerateInputs() {
 void DetectionOutputLayerTest::Compare(
         const std::vector<std::pair<ngraph::element::Type, std::vector<std::uint8_t>>> &expectedOutputs,
         const std::vector<InferenceEngine::Blob::Ptr> &actualOutputs) {
+    std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+    std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+    std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+    std::cout << "SHOUDN'T BE HERE!\n";
+    std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+    std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+    std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+
     for (std::size_t outputIndex = 0; outputIndex < expectedOutputs.size(); ++outputIndex) {
         const auto &expected = expectedOutputs[outputIndex].second;
         const auto &actual = actualOutputs[outputIndex];
@@ -153,7 +162,8 @@ void DetectionOutputLayerTest::SetUp() {
 
     ov::ParameterVector params;
     for (auto&& shape : inShapes) {
-        params.push_back(std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape(shape)));
+        // params.push_back(std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape(shape)));
+        params.push_back(std::make_shared<ov::op::v0::Parameter>(ov::element::f16, ov::Shape(shape)));
     }
     auto paramOuts = ngraph::helpers::convert2OutputVector(ngraph::helpers::castOps2Nodes<ngraph::opset3::Parameter>(params));
     auto detOut = ngraph::builder::makeDetectionOutput(paramOuts, attrs);
