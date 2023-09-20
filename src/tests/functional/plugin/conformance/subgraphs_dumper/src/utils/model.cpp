@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
+#define ENABLE_OV_IR_FRONTEND 1
+
 #include "openvino/util/file_util.hpp"
 #include "functional_test_utils/ov_plugin_cache.hpp"
 #include "utils/model.hpp"
