@@ -231,12 +231,14 @@ void fuse_mean_scale(ov::preprocess::PrePostProcessor& preproc, const benchmark_
 
 // constexpr bool TO_DUMP = true;
 constexpr bool TO_DUMP = false;
-constexpr float THRESHOLD = 2.0f;
+// constexpr float THRESHOLD = 2.0f;
+constexpr float THRESHOLD = 0.01f;
 
 template <typename T>
 void dumpTensor_t(std::ofstream& f, const ov::Tensor& t) {
     const auto* ptr = static_cast<const T*>(t.data());
     for (size_t i = 0; i < t.get_size(); ++i){
+        // TODO: if there are problems with conversion from e.g. int32_t, this cast should be refactored
         f << static_cast<float>(ptr[i]) << ' ';
     }
     f << '\n';
@@ -245,9 +247,15 @@ void dumpTensor_t(std::ofstream& f, const ov::Tensor& t) {
 void dumpTensor(const std::string& fileName, const ov::Tensor& t) {
     std::ofstream f;
     f.open(fileName, std::ios::trunc);
+    if (!f.good()) {
+        throw std::runtime_error{"Couldn't open file: " + fileName};
+    }
     const auto& type = t.get_element_type();
+    std::cout << type << '\n';
     if (type == ov::element::Type_t::f32) {
         dumpTensor_t<float>(f, t);
+    } else if (type == ov::element::Type_t::i32) {
+        dumpTensor_t<int32_t>(f, t);
     } else if (type == ov::element::Type_t::u8) {
         dumpTensor_t<uint8_t>(f, t);
     } else {
@@ -262,6 +270,7 @@ void validateTensor_t(std::ifstream& f, const ov::Tensor& t, float threshold) {
     std::cout << "ptr = " << static_cast<const void*>(ptr) << '\n';
     float ref;
     for (size_t i = 0; i < t.get_size(); ++i){
+        // TODO: if there are problems with conversion from e.g. int32_t, this cast should be refactored
         const auto act = static_cast<float>(ptr[i]);
         f >> ref;
         const float diff = std::abs(act - ref);
@@ -273,20 +282,38 @@ void validateTensor_t(std::ifstream& f, const ov::Tensor& t, float threshold) {
             throw std::runtime_error{"diff > threshold"};
         }
     }
+    std::cout << "OK\n";
 }
 
 void validateTensor(const std::string& fileName, const ov::Tensor& t, float threshold = THRESHOLD) {
     std::ifstream f;
     f.open(fileName, std::ios::in);
+    if (!f.good()) {
+        throw std::runtime_error{"Couldn't open file: " + fileName};
+    }
     const auto& type = t.get_element_type();
+    std::cout << type << '\n';
     if (type == ov::element::Type_t::f32) {
         validateTensor_t<float>(f, t, threshold);
+    } else if (type == ov::element::Type_t::i32) {
+        validateTensor_t<int32_t>(f, t, threshold);
     } else if (type == ov::element::Type_t::u8) {
         validateTensor_t<uint8_t>(f, t, threshold);
     } else {
         throw std::runtime_error("Unsupported type: " + type.get_type_name());
     }
     f.close();
+}
+
+void removeInvalidChars(std::string& fileName) {
+    const std::set<char> invalidChars = {'/', '\\', ':', '*', '?', '"', '<', '>', '|'};
+    for (std::size_t i = 0; i < fileName.size(); ++i) {
+        // if (std::find(invalidChars.begin(), invalidChars.end(), newFileName[i]) != invalidChars.end()) {
+        if (invalidChars.count(fileName[i]) != 0) {
+            // std::replace(newFileName.begin(), newFileName.end(), c, '_');
+            fileName[i] = '_';
+        }
+    }
 }
 
 /**
@@ -1192,13 +1219,16 @@ int main(int argc, char* argv[]) {
 
             std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
             auto inputs = app_inputs_info[iteration % app_inputs_info.size()];
-            std::cout << "Dumping inputs, IR #" << std::to_string(iteration) << '\n';
+            std::cout << (TO_DUMP ? "Dumping" : "Validating") << " inputs, IR #" << std::to_string(iteration) << '\n';
             size_t i = 0;
             for (auto& item : inputs) {
                 auto inputName = item.first;
                 const auto& data = inputsData.at(inputName)[iteration % inputsData.at(inputName).size()];
 
                 std::string fName = std::string{"ref_input0"} + std::to_string(i) + '_' + inputName + ".txt";
+                removeInvalidChars(fName);
+                
+                std::cout << "File: " << fName << '\n';
                 if (TO_DUMP) {
                     dumpTensor(fName, data);
                 } else {
@@ -1254,12 +1284,16 @@ int main(int argc, char* argv[]) {
         // for (auto&& ir : inferRequestsQueue.requests) {
         for (auto&& ir : allIRs) {
             std::cout  << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n";
-            std::cout << "Dumping outputs, IR #" << std::to_string(n) << '\n';
+            std::cout << (TO_DUMP ? "Dumping" : "Validating") << " outputs, IR #" << std::to_string(n) << '\n';
             size_t i = 0;
             for (auto& output : compiledModel.outputs()) {
                 const auto& outputName = output.get_any_name();
-                const std::string fName = std::string{"ref_output0"} + std::to_string(i) + '_' + outputName + ".txt";
+                std::string fName = std::string{"ref_output0"} + std::to_string(i) + '_' + outputName + ".txt";
+                removeInvalidChars(fName);
+
                 const auto& t = ir->get_tensor(outputName);
+
+                std::cout << "File: " << fName << '\n';
                 if (TO_DUMP) {
                     dumpTensor(fName, t);
                 } else {
