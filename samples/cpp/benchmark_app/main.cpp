@@ -231,8 +231,9 @@ void fuse_mean_scale(ov::preprocess::PrePostProcessor& preproc, const benchmark_
 
 // constexpr bool TO_DUMP = true;
 constexpr bool TO_DUMP = false;
-// constexpr float THRESHOLD = 2.0f;
-constexpr float THRESHOLD = 0.01f;
+
+// constexpr float THRESHOLD = 0.01f;
+constexpr float THRESHOLD = 0.1f;
 
 template <typename T>
 void dumpTensor_t(std::ofstream& f, const ov::Tensor& t) {
