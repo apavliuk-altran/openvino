@@ -21,7 +21,7 @@ endif()
 add_library(${TARGET_NAME}
     $<TARGET_OBJECTS:ngraph_obj>
     $<TARGET_OBJECTS:ngraph_obj_version>
-    $<TARGET_OBJECTS:frontend_common_obj>
+    $<TARGET_OBJECTS:openvino_frontend_common_obj>
     $<TARGET_OBJECTS:inference_engine_obj>
     $<TARGET_OBJECTS:inference_engine_obj_version>
     $<TARGET_OBJECTS:inference_engine_transformations_obj>
@@ -54,12 +54,6 @@ endif()
 
 if(NOT BUILD_SHARED_LIBS)
     target_compile_definitions(${TARGET_NAME} PUBLIC OPENVINO_STATIC_LIBRARY)
-
-    # TODO: remove together we GNA plugin
-    # for static linkage the dependencies are in opposite order
-    if(TARGET inference_engine_ir_v7_reader)
-        target_link_libraries(${TARGET_NAME} PRIVATE inference_engine_ir_v7_reader)
-    endif()
 endif()
 
 if(WIN32)
@@ -78,8 +72,8 @@ if(TBB_FOUND)
     if(NOT TBB_LIB_INSTALL_DIR)
         message(FATAL_ERROR "Internal error: variable 'TBB_LIB_INSTALL_DIR' is not defined")
     endif()
-    # set LC_RPATH to TBB library directory
-    ov_set_apple_rpath(${TARGET_NAME} ${OV_CPACK_RUNTIMEDIR} ${TBB_LIB_INSTALL_DIR})
+    # set RPATH / LC_RPATH to TBB library directory
+    ov_set_install_rpath(${TARGET_NAME} ${OV_CPACK_RUNTIMEDIR} ${TBB_LIB_INSTALL_DIR})
 endif()
 
 # must be called after all target_link_libraries
@@ -96,9 +90,9 @@ export(TARGETS ${TARGET_NAME} NAMESPACE openvino::
        APPEND FILE "${CMAKE_BINARY_DIR}/OpenVINOTargets.cmake")
 
 install(TARGETS ${TARGET_NAME} EXPORT OpenVINOTargets
-        RUNTIME DESTINATION ${OV_CPACK_RUNTIMEDIR} COMPONENT ${OV_CPACK_COMP_CORE}
-        ARCHIVE DESTINATION ${OV_CPACK_ARCHIVEDIR} COMPONENT ${OV_CPACK_COMP_CORE}
-        LIBRARY DESTINATION ${OV_CPACK_LIBRARYDIR} COMPONENT ${OV_CPACK_COMP_CORE}
+        RUNTIME DESTINATION ${OV_CPACK_RUNTIMEDIR} COMPONENT ${OV_CPACK_COMP_CORE} ${OV_CPACK_COMP_CORE_EXCLUDE_ALL}
+        ARCHIVE DESTINATION ${OV_CPACK_ARCHIVEDIR} COMPONENT ${OV_CPACK_COMP_CORE} ${OV_CPACK_COMP_CORE_EXCLUDE_ALL}
+        LIBRARY DESTINATION ${OV_CPACK_LIBRARYDIR} COMPONENT ${OV_CPACK_COMP_CORE} ${OV_CPACK_COMP_CORE_EXCLUDE_ALL}
         NAMELINK_COMPONENT ${OV_CPACK_COMP_CORE_DEV}
         INCLUDES DESTINATION ${OV_CPACK_INCLUDEDIR}
                              ${OV_CPACK_INCLUDEDIR}/ie)
@@ -147,7 +141,8 @@ ov_cpack_add_component(${OV_CPACK_COMP_CORE_DEV}
 if(ENABLE_PLUGINS_XML)
     install(FILES $<TARGET_FILE_DIR:${TARGET_NAME}>/plugins.xml
             DESTINATION ${OV_CPACK_PLUGINSDIR}
-            COMPONENT ${OV_CPACK_COMP_CORE})
+            COMPONENT ${OV_CPACK_COMP_CORE}
+            ${OV_CPACK_COMP_CORE_EXCLUDE_ALL})
 
     if(ENABLE_TESTS)
         # for InferenceEngineUnitTest
@@ -164,7 +159,8 @@ install(EXPORT OpenVINOTargets
         FILE OpenVINOTargets.cmake
         NAMESPACE openvino::
         DESTINATION ${OV_CPACK_OPENVINO_CMAKEDIR}
-        COMPONENT ${OV_CPACK_COMP_CORE_DEV})
+        COMPONENT ${OV_CPACK_COMP_CORE_DEV}
+        ${OV_CPACK_COMP_CORE_DEV_EXCLUDE_ALL})
 
 # build tree
 
@@ -227,12 +223,14 @@ configure_file("${OpenVINO_SOURCE_DIR}/cmake/templates/OpenVINOConfig-version.cm
 install(FILES "${CMAKE_BINARY_DIR}/share/InferenceEngineConfig.cmake"
               "${CMAKE_BINARY_DIR}/InferenceEngineConfig-version.cmake"
         DESTINATION ${OV_CPACK_IE_CMAKEDIR}
-        COMPONENT ${OV_CPACK_COMP_CORE_DEV})
+        COMPONENT ${OV_CPACK_COMP_CORE_DEV}
+        ${OV_CPACK_COMP_CORE_DEV_EXCLUDE_ALL})
 
 install(FILES "${CMAKE_BINARY_DIR}/share/OpenVINOConfig.cmake"
               "${CMAKE_BINARY_DIR}/OpenVINOConfig-version.cmake"
         DESTINATION ${OV_CPACK_OPENVINO_CMAKEDIR}
-        COMPONENT ${OV_CPACK_COMP_CORE_DEV})
+        COMPONENT ${OV_CPACK_COMP_CORE_DEV}
+        ${OV_CPACK_COMP_CORE_DEV_EXCLUDE_ALL})
 
 #
 # Generate and install openvino.pc pkg-config file
@@ -313,5 +311,6 @@ if(ENABLE_PKGCONFIG_GEN)
 
     install(FILES "${pkgconfig_out}"
             DESTINATION "${OV_CPACK_RUNTIMEDIR}/pkgconfig"
-            COMPONENT ${OV_CPACK_COMP_CORE_DEV})
+            COMPONENT ${OV_CPACK_COMP_CORE_DEV}
+            ${OV_CPACK_COMP_CORE_DEV_EXCLUDE_ALL})
 endif()
